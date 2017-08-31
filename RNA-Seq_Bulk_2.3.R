@@ -19,19 +19,21 @@ library(genefilter)
 library(plyr)
 library(limma)
 library(RColorBrewer)
+library(circlize)
 
 #### Config param  #####
-setwd("~/PHDwork/07-DGE-Seq/RUN7/DEgenesAhmed/") #Change Working Directory
-RequiredfunctionsDir<-"functions/" 
-expressionData<-"data/exprDat_Ahmed.tsv"
-sampleTable<-"data/sampleAnnot_Ahmed.tsv"
-condCol<-"Group.compact" #name of condition column in sample table for DE genes
-batchCol<-NULL #Name of batch column in sample table for batch correction, 'NULL' if no batch
-p.valDEthreshold<-0.05
-logFCthreshold<-1
-sample.species<-"Rat" #data(bods); print(bods) #to see available species
+setwd("~/PHDwork/Scripts/RNA-Seq_Bulk2.3/") #Put your Working Directory
+RequiredfunctionsDir<-"functions/" #functions used by script path
+expressionData<-"data/exprDat.tsv" #expression file path
+sampleTable<-"data/sampleAnnot.tsv" #sample sheet path
+condCol<-"CompoState" #name of condition column in sample table for DE genes
+batchCol<-"Run" #Name of batch column in sample table for batch correction, 'NULL' if no batch
+AdjPVaLthreshold<-0.05 #Benjamini & Hochberg pvalue threshold to consider a gene as differentially expressed
+QValthreshold<-0.05 #local adjusted fdr threshold to consider a gene as differentially expressed (package fdrtool)
+logFCthreshold<-1 #Absolute Log2(Fold-Change) threshold (if logFCthreshold=1, gene is differentially expressed if expressed 2 time more or less between folds)
+sample.species<-"Human" #data(bods); print(bods) #to see available species
 nTopGo<-100 #n TOp Go Term/Ontology
-updateSpeciesPackage<-FALSE #update org.species database ?
+updateSpeciesPackage<-FALSE #update org.species database ? It is recommended to change this parameter to TRUE one time by semester
 
 #####LOADING DATA#####
 #Importation des fonctions maison
@@ -107,8 +109,9 @@ save.image("rsave/Step1.R.RData")
 
 ##### Quality control#####
 absSamples<-examineRNAseqSamples(exprDat)
+ecrire(absSamples,"results/SamplesAbstract.tsv")
 
-pdf(file = "figs/QC.pdf",width=10,height=10)
+pdf(file = "figs/DistribCountPerSample.pdf",width=10,height=10)
 if(batch){
   plotDistrib(exprDatT,main="Barplots of normalized/transformed data",conditions = sampleAnnot[,batchCol])
   plotDistrib(exprDatTa,main="Barplots of normalized/transformed/adjusted data",conditions = sampleAnnot[,batchCol])
@@ -129,7 +132,9 @@ dev.off()
 exprDat.UPM <- UMI2UPM(exprDat)
 ecrire(exprDat.UPM,"results/exprDatUPM.tsv")
 
-
+rowScaledExpr<-rowScale(exprW,center=TRUE,scale=TRUE)
+quantile.expr<-quantile(unlist(rowScaledExpr),seq(0,1,.01))
+colHA<-colorRamp2(c(quantile.expr[2],0,quantile.expr[100]),c("blue","white","red"))
 #####PCA#####
 compo<-4
 
@@ -202,7 +207,7 @@ save.image("rsave/Step2.R.RData")
 
 
 #####DE analysis#####
-#On défini les condition de départ d'interêt
+#Generation of each comparison
 conds<-levels(sampleAnnot[,condCol])
 
 comps<-c()
@@ -214,7 +219,7 @@ res<-list()
 for(comp in comps){
   cond1<-unlist(strsplit(comp,"_"))[1]
   cond2<-unlist(strsplit(comp,"_"))[2]
-  #résultats DESeq2 pour chaque comparaison
+  #DESeq results for each comparison
   res[[comp]]<-results(dds, contrast=c(condCol,cond1,cond2), independentFiltering = TRUE)
 }
 
@@ -222,7 +227,7 @@ samples<-colnames(exprW)
 genes<-rownames(exprW)
 
 
-#On récupère les statistiques de résultat pour chaque comparaison dans des dataframe
+#gathering each results in a dataframe
 DE<-list()
 FDR.res<-list()
 
@@ -239,7 +244,7 @@ for(comp in comps){
   DE[[comp]]$fdr.qval<-FDR.res[[comp]]$qval
 }
 
-#Tableau correspondance échantillon/groupe
+#sample/group correspondence 
 sampleGroupVector<-colData(dds)[[condCol]]
 names(sampleGroupVector)<-colnames(dds)
 
@@ -250,8 +255,8 @@ for(comp in comps) ecrire(DE[[comp]],paste0("results/DESeqRes_",comp,".tsv"))
 DE.sel<-list()
 for(comp in comps){
   DE.sel[[comp]]<-list()
-  DE.sel[[comp]]$up<-DE[[comp]][which(DE[[comp]]$padj<p.valDEthreshold & DE[[comp]]$log2FoldChange > logFCthreshold),]
-  DE.sel[[comp]]$down<-DE[[comp]][which(DE[[comp]]$padj<p.valDEthreshold & DE[[comp]]$log2FoldChange < -logFCthreshold),]
+  DE.sel[[comp]]$up<-DE[[comp]][which(DE[[comp]]$padj<AdjPVaLthreshold & DE[[comp]]$log2FoldChange > logFCthreshold &  DE[[comp]]$fdr.qval<QValthreshold),]
+  DE.sel[[comp]]$down<-DE[[comp]][which(DE[[comp]]$padj<AdjPVaLthreshold & DE[[comp]]$log2FoldChange < -logFCthreshold &  DE[[comp]]$fdr.qval<QValthreshold),]
   DE.sel[[comp]]$isDE<-rbind(DE.sel[[comp]]$up,DE.sel[[comp]]$down)
   DE.sel[[comp]]$notDE<-DE[[comp]][setdiff(rn(DE[[comp]]),rn(DE.sel[[comp]]$isDE)),]
 }
@@ -263,13 +268,23 @@ for(comp in comps){
   
   pdf(paste0("figs/VolcanoPlot_",comp,".pdf"),width=10,height=10)
   plot(DE[[comp]]$log2FoldChange,-log10(DE[[comp]]$padj),type="n",ylab="-log10(DEseq padj)",xlab="log2(Fold-Change)",col="black",
-       main=paste0("Volcano plot of comparison ",cond1," (pos FC) VS ",cond2," (neg FC)\nDESeq padj method (",nrow(DE.sel.deseq[[comp]]$isDE),"/",nrow(DE[[comp]])," DE genes)"))
-  abline(h=-log10(p.valDEthreshold))
+       main=paste0("Volcano plot of comparison ",cond1," (pos FC) VS ",cond2," (neg FC)\nBenjamini & Hochberg method (",nrow(DE.sel[[comp]]$isDE),"/",nrow(DE[[comp]])," DE genes)"))
+  abline(h=-log10(AdjPVaLthreshold))
   abline(v = -logFCthreshold)
   abline(v = logFCthreshold)
-  if(nrow(DE.sel.deseq[[comp]]$up)>0) text(DE.sel.deseq[[comp]]$up$log2FoldChange,-log10(DE.sel.deseq[[comp]]$up$padj),labels = rownames(DE.sel.deseq[[comp]]$up),cex=.2,col="red")
-  if(nrow(DE.sel.deseq[[comp]]$down)>0) text(DE.sel.deseq[[comp]]$down$log2FoldChange,-log10(DE.sel.deseq[[comp]]$down$padj),labels = rownames(DE.sel.deseq[[comp]]$down),cex=.2,col="green")
-  points(DE.sel.deseq[[comp]]$notDE$log2FoldChange,-log10(DE.sel.deseq[[comp]]$notDE$padj),cex=.2,col="black",pch=16)
+  if(nrow(DE.sel[[comp]]$up)>0) text(DE.sel[[comp]]$up$log2FoldChange,-log10(DE.sel[[comp]]$up$padj),labels = rownames(DE.sel[[comp]]$up),cex=.2,col="red")
+  if(nrow(DE.sel[[comp]]$down)>0) text(DE.sel[[comp]]$down$log2FoldChange,-log10(DE.sel[[comp]]$down$padj),labels = rownames(DE.sel[[comp]]$down),cex=.2,col="green")
+  points(DE.sel[[comp]]$notDE$log2FoldChange,-log10(DE.sel[[comp]]$notDE$padj),cex=.2,col="black",pch=16)
+  
+  plot(DE[[comp]]$log2FoldChange,-log10(DE[[comp]]$fdr.qval),type="n",ylab="-log10(qval)",xlab="log2(Fold-Change)",col="black",
+       main=paste0("Volcano plot of comparison ",cond1," (pos FC) VS ",cond2," (neg FC)\nLocal adjusted fdr method (",nrow(DE.sel[[comp]]$isDE),"/",nrow(DE[[comp]])," DE genes)"))
+  abline(h=-log10(QValthreshold))
+  abline(v = -logFCthreshold)
+  abline(v = logFCthreshold)
+  if(nrow(DE.sel[[comp]]$up)>0) text(DE.sel[[comp]]$up$log2FoldChange,-log10(DE.sel[[comp]]$up$fdr.qval),labels = rownames(DE.sel[[comp]]$up),cex=.2,col="red")
+  if(nrow(DE.sel[[comp]]$down)>0) text(DE.sel[[comp]]$down$log2FoldChange,-log10(DE.sel[[comp]]$down$fdr.qval),labels = rownames(DE.sel[[comp]]$down),cex=.2,col="green")
+  points(DE.sel[[comp]]$notDE$log2FoldChange,-log10(DE.sel[[comp]]$notDE$fdr.qval),cex=.2,col="black",pch=16)
+  
   dev.off()
 }
 
@@ -277,9 +292,7 @@ for(comp in comps){
 ####Clustering DE#####
 #Select comparisons with number of DE > 0
 compsDE<-c(); for(comp in comps) if(nrow(DE.sel[[comp]]$isDE)>1) compsDE<-c(compsDE,comp)
-
-
-#Stockage des gènes DE et de leur expression dans des vecteurs/dataframe
+#DE genes storage in dataframes/vectors
 DEgenes.names<-list()
 
 for (comp in compsDE) DEgenes.names[[comp]]<-rn(DE.sel[[comp]]$isDE)
@@ -290,32 +303,37 @@ exprDE<-list()
 exprDE.scaled<-list()
 for (comp in compsDE){
   exprDE[[comp]]<-exprW[DEgenes.names[[comp]],,drop=FALSE]
-  exprDE.scaled[[comp]]<-exprDE[[comp]]-rowMeans(exprDE[[comp]])
+  exprDE.scaled[[comp]]<-rowScale(exprDE[[comp]],center = TRUE,scaled = TRUE)
 }
 
 #! long
 hclustGeneDE<-list()
 hclustSampleDE<-list()
 for (comp in compsDE){
-    hclustGeneDE[[comp]]<-pvclust(t(exprDE.scaled[[comp]]),nboot=10,method.hclust = "ward.D2",parallel = TRUE)
-    hclustSampleDE[[comp]]<-pvclust(exprDE.scaled[[comp]],nboot=30,method.hclust = "ward.D2",parallel = TRUE)
+  if(nrow(exprDE.scaled[[comp]])>10){
+    hclustGeneDE[[comp]]<-pvclust(t(exprDE.scaled[[comp]]),nboot=30,method.hclust = "ward.D2",parallel = TRUE)$hclust
+    hclustSampleDE[[comp]]<-pvclust(exprDE.scaled[[comp]],nboot=10,method.hclust = "ward.D2",parallel = TRUE,method.dist = "euclidean")$hclust
+  }else{
+    hclustGeneDE[[comp]]<-stats::hclust(corrDist(exprDE.scaled[[comp]]),method = "ward.D2")
+    hclustSampleDE[[comp]]<-stats::hclust(dist(t(exprDE.scaled[[comp]])),method = "ward.D2")
+  }
 }
 
 pdf("figs/clustDEgene.pdf",width = 10,height=10)
 for(comp in compsDE){
   print(
-    Heatmap(exprDE.scaled[[comp]],top_annotation = ha, row_names_gp = autoGparFontSizeMatrix(nrow(exprDE.scaled[[comp]])),cluster_rows = hclustGeneDE[[comp]]$hclust,
-                 cluster_columns = hclustSampleDE[[comp]]$hclust,name=comp,column_names_gp = autoGparFontSizeMatrix(ncol(exprDE.scaled[[comp]])) )
+    Heatmap(exprDE.scaled[[comp]],top_annotation = ha, row_names_gp = autoGparFontSizeMatrix(nrow(exprDE.scaled[[comp]])),cluster_rows = hclustGeneDE[[comp]],col = colHA,
+                 cluster_columns = hclustSampleDE[[comp]],name=comp,column_names_gp = autoGparFontSizeMatrix(ncol(exprDE.scaled[[comp]])) )
   )
 }
 dev.off();
 
-#Pour chaque comparaison les gène DE sont séparées en 2
+#For each comparison, genes are separated in two group
 hclustDE.cuted<-list()
 for(comp in compsDE)
-  hclustDE.cuted[[comp]]<-cutree(hclustGeneDE[[comp]]$hclust, k = 2)
+  hclustDE.cuted[[comp]]<-cutree(hclustGeneDE[[comp]], k = 2)
 
-#Création de la matrice DE, contient tous les gènes, avec 1 DE positif, 0 DE négatif pour la condition
+#DE genes digital matrix, 1=gene is DE, 0=gene not DE
 DE.df<-matrix(0,nrow(exprDat),length(comps))
 colnames(DE.df)<-comps
 rownames(DE.df)<-genes
@@ -327,8 +345,8 @@ for(comp in compsDE){
 
 
 
-#Etude logFC, s'assurer d'à quoi correspond un logFC négatif
-#On écrit la moyenne du Fold chanage par cluster de condition pour savoir qui est activé pour quelle groupe
+#Log fold change study
+#Mean LOGFC by gene cluster
 meanFC<-matrix(0,length(compsDE)*2,3)
 rownames(meanFC)<-paste0(rep(compsDE,each=2),".",rep(1:2,length(compsDE)))
 colnames(meanFC)<-c("MeanLogFC","MeanExprCondLeft","MeanExprCondRight")
@@ -371,7 +389,7 @@ for(comp in compsDE){
 }
 
 
-onts = c( "MF", "BP", "CC" ) #liste des Go ontology
+onts = c( "MF", "BP", "CC" ) #GO ontology list
 tab = as.list(onts)
 names(tab) = onts
 topGOResults<-list()
@@ -423,43 +441,12 @@ for(comp in compsDE){ #for each comparison
 
 ####HEATMAP TOPGO####
 
-#Création du tableau de conversion ensembl id vers gene Name
+#Creation of id conversion table
 hashNameToEntrez<-genes
 names(hashNameToEntrez)<-ConvertKey(genes,tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID")
 hashNameToEntrez<-supprNAnames(hashNameToEntrez)
 
-### un GO terme ###
-#PARAMETRE
-compsDE
-comp<-compsDE[6]
-topGOResults[[comp]][,c("Term","Rank in Fisher.classic","ont")] #visualisation pour choisir le rang d'interêt
-index<-1 #index d'interêt
-
-#BEGIN (à executer une fois les paramètres défini jusqu'à END
-allRes<-topGOResults[[comp]]
-goID <- allRes[index, "GO.ID"] # on recupere ici le GO term avec l'index voulu
-term<-  allRes[index, "Term"] #même chose pour la définition du Go
-goID.genes.ensemblID <- unlist(genesInTerm(GOdata[[comp]][[allRes[index,"ont"]]], whichGO=goID)) # on recupere l'ensemble des genes associes a ce GO terme 
-
-#preparation de la matrice d'expression
-ExpressionDataDE = exprW[alg[[comp]]==1,]
-ExpressionData.selecGO=ExpressionDataDE[intersect(hashNameToEntrez[goID.genes.ensemblID],rownames(ExpressionDataDE)),] # matrice d'expression restreinte aux genes associes au terme
-data = ExpressionData.selecGO-min(ExpressionData.selecGO)
-data = data-rowMeans(data)
-
-
-#Heatmap
-Heatmap(data, column_title = paste0("Disregulated gene from ",goID,":\n",term,"\nin comparison ",comp),
-        name = "expression", top_annotation = ha, show_heatmap_legend=T,
-        row_names_gp = autoGparFontSizeMatrix(nrow(data)),column_names_gp = autoGparFontSizeMatrix(ncol(data)),
-        clustering_distance_rows = "pearson",
-        clustering_method_rows = "ward.D2",
-        clustering_distance_columns = "pearson",
-        clustering_method_columns = "ward.D2"
-)
-# END
-
-### plusieurs terme GO ###
+### Several GO term ###
 
 index=c(1:10,nTopGo:(nTopGo+10),(2*nTopGo):(2*nTopGo+10))
 pdf(file = "figs/HeatmapGOterms.pdf",width = 10,height=15)
@@ -485,24 +472,30 @@ for(comp in compsDE){
   }
   names(goAnnotations) = goID
   
-  #prepraration de la matrice d'expression
+  #Expression matrix preparation
   ExpressionDataDE = exprW[alg[[comp]]==1,]
   ExpressionData.selecGO=ExpressionDataDE[intersect(goID,rownames(ExpressionDataDE)),] # matrice d'expression restreinte aux genes associes au terme
+  if(nrow(ExpressionData.selecGO)==0) break
   data = ExpressionData.selecGO-min(ExpressionData.selecGO)
-  data = data-rowMeans(data)
+  data = rowScale(data,center = TRUE,scale=TRUE)
   
-  sampleClustGO<-pvclust(data,method.hclust = "ward.D2",method.dist = "euclidean",parallel = TRUE,nboot = 10)
+  if(nrow(data)>4){
+    sampleClustGO<-pvclust(data,method.hclust = "ward.D2",method.dist = "euclidean",parallel = TRUE,nboot = 10)$hclust
+  }else{
+    sampleClustGO<-stats::hclust(corrDist(t(data)),method = "ward.D2")
+  }
+  
   
   print(Heatmap(data, column_title = paste0("Disregulated gene from several GO terms\nin comparison ",cond1," VS ",cond2),
           name = "Expr",  top_annotation = ha, show_heatmap_legend=TRUE,
           column_names_gp = autoGparFontSizeMatrix(ncol(data)),
-          cluster_columns = sampleClustGO$hclust,
+          cluster_columns = sampleClustGO,col = colHA,
           split = goAnnotations[rownames(data)], row_title_gp = gpar(fontsize = 6), 
           row_title_rot =  0, row_names_gp = autoGparFontSizeMatrix(nrow(data)) 
   ))
 }
 dev.off()
-
+  
 ####GAGE####
 #Database preparation
 data(kegg.gs)
@@ -531,7 +524,6 @@ for(comp in comps){
   dataDE.entrez[[comp]]<-dataDE.entrez[[comp]][which(!is.na(dataDE.entrez[[comp]]))]
 }
 
-#ici compare = "unpaired" car ind non paire entre les 2 conditions (aller voir compare = "unparied" et same.dir = TRUE)
 RESgage.kegg<-list()
 RESgage.go.bp<-list()
 diffExpr<-list()
@@ -541,17 +533,14 @@ for(comp in comps){
   samp<-groupIndex[[unlist(strsplit(comp,"_"))[2]]]
   RESgage.kegg[[comp]] <-gage(exprs=ExpressionData.entrez,gsets = kegg.gs,ref = ref, samp = samp, compare = "unpaired",same.dir = FALSE) #on prend les pathway les plus perturbés
 }
-# possibilité de faire fonctionner avec sameDirection=FALSE  !!
+# can work with sameDirection=FALSE  !!
 
-select<-AnnotationDbi::select #Conflit entre WGCNA et pathview (au cas où le package WGCNA est chargée)
+select<-AnnotationDbi::select #prevent conflict with other packages
 
 sel<-list()
 logFC<-list()
 for(comp in comps){
-  logFC[[comp]] = res[[comp]]$log2FoldChange #! log2fc sert de valeur par pour les pathview mais toujours dans le même sens
-}
-
-for(comp in comps){
+  logFC[[comp]] = res[[comp]]$log2FoldChange
   names(logFC[[comp]])<-ConvertKey(genes,corrIdGenes,"SYMBOL","ENTREZID")
   logFC[[comp]]<-logFC[[comp]][which(!is.na(names(logFC[[comp]])))]
   #Greater (up regulated)
@@ -565,33 +554,6 @@ for(comp in comps){
   ecrire(RESgage.kegg[[comp]]$greater[sel[[comp]],],"statPathway.tsv")
   setwd("../..")
 }
-
-
-####Heatmap pathway#### 
-
-### un Kegg terme ###
-##PARAMETRE
-#comp<-comps[1]
-#RESgage.kegg[[comp]]$greater[sel[[comp]],c("stat.mean","q.val")] #visualisation pour choisir le rang d'interêt
-#kegg.name<-"hsa04660 T cell receptor signaling pathway" #nom du pathway d'interêt
-#
-##BEGIN (à executer une fois les paramètres défini jusqu'à END
-#allRes<-topGOResults[[comp]]
-#kegg.genes<- ConvertKey(unique(unlist(kegg.gs[kegg.name])),corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL")
-#
-##preparation de la matrice d'expression
-#ExpressionData.selecKEGG=exprW[intersect(kegg.genes,rownames(exprW)),] # matrice d'expression restreinte aux genes associes au terme
-#data = ExpressionData.selecKEGG-min(ExpressionData.selecKEGG)
-#data = data-rowMeans(data)
-#
-#
-##Heatmap
-#Heatmap(data, column_title = paste0("Disregulated gene from\n",kegg.name,"\nin comparison ",comp),
-#        name = "expression", top_annotation = ha, show_heatmap_legend=T,
-#        row_names_gp = autoGparFontSizeMatrix(nrow(data)),column_names_gp = autoGparFontSizeMatrix(ncol(data))
-#)
-## END
-
 
 ####annotation stats####
 pathAbstract<-list()

@@ -24,6 +24,7 @@ ecrire<-function(x,file="default.tsv",headRow="Name"){
 }
 
 gmean<-function(x, keepZero=F){ #moyenne géometrique
+	if(sum(x)==0) return(0)
 	if(!keepZero){
 		x<-x[which(x!=0)]
 	}
@@ -245,7 +246,6 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
     layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
                     ncol = cols, nrow = ceiling(numPlots/cols))
   }
-
  if (numPlots==1) {
     print(plots[[1]])
 
@@ -288,9 +288,7 @@ rowScale<-function(data,center=TRUE,scaled=FALSE){
 	return(data)
 }
 
-corrDist<-function(x){
-	return(as.dist(1-cor(x)))
-}
+corrDist<-function(x) return(as.dist((1 - cor(Matrix::t(x)))/2))
 
 chead<-function(x, n=5){
 	print(x[1:n,1:n])
@@ -304,4 +302,34 @@ inflaslope<-function(x, ordering=TRUE, decreasing = FALSE){
 	t2<-abs(t1[1:(l1-1)]-t1[2:l1])[1:(l1-1)]
 	t3<-which(t2>sd(x))[1]
 	return(t3)
+}
+
+majR<-function(){
+	# installing/loading the package:
+	if(!require(installr)) {
+	install.packages("installr"); require(installr)} #load / install+load installr
+	# using the package:
+	updateR()
+}
+
+# @definition Logical combination af a vector with custom operator
+combineLogical<-function(x,operator="&"){
+	if(!is.vector(x))  stop("error, x must be a vector")
+	if(!is.logical(x)) stop("error, x must be logical")
+	if(!operator%in%c("&","|")) stop("error, operator must be equal to '&' or '|'")
+	res<-sum(x)
+	lg<-length(x)
+	if(res==0) return(FALSE)
+	if(operator=="&" & res<lg) return(FALSE)
+	return(TRUE)
+}
+
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+ggplotColours <- function(n = 6, h = c(0, 360) + 15){
+    if ((diff(h) %% 360) < 1) h[2] <- h[2] - 360/n
+    hcl(h = (seq(h[1], h[2], length = n)), c = 100, l = 65)
 }

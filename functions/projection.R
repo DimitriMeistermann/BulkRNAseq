@@ -252,26 +252,161 @@ NMDS<-function(data,transpose=TRUE,scale=FALSE,center=FALSE,metric=dist,ndim=2,m
 	return(fit)
 }
 
-proj2d<-function(obj,coord=NULL, axis=1:2,group=NULL, pointSize=2, plotText=FALSE,main=NULL,ellipse=FALSE){
+proj2d<-function(obj=NULL,coord=NULL, axis=1:2,group=NULL, pointSize=3, plotText=FALSE,main=NULL,alpha=9/10, 
+ellipse=FALSE,emph=NULL,colorScale=NULL,returnGraph=FALSE,legendTitle="Values",axis.names=NULL,na.color="grey50",na.bg=TRUE){
+	if(!(is.factor(group)|is.numeric(group)|is.null(group))) stop("Error, group must be numerical, factor or null.")
 	if(is.null(coord)) coord<-obj$coord
 	if(!require("ggplot2")) stop("You must install ggplot2");
 	if(length(axis)!=2) stop("You must give a vector of 2 integer for axis parameter");
-	functPlot<-ifelse(plotText,geom_text,geom_point)
+	if((!is.null(axis.names)) & length(axis.names)!=2) stop("Error, if given axis.names parameter must contain 2 values.");
+	d <- data.frame(lab=rownames(coord),Axis1=coord[,axis[1]], Axis2=coord[,axis[2]],sizeMultiplier=rep(pointSize,nrow(coord)));
 	if(is.null(group)){
-		d <- data.frame(Axis1=coord[,axis[1]], Axis2=coord[,axis[2]]);
-		rownames(d)<-rownames(coord)
-		graph<-ggplot(data=d, mapping = aes(x=Axis1, y=Axis2, label = rownames(d)))
+		graph<-ggplot(data=d, mapping = aes(x=Axis1, y=Axis2, label = lab, size=sizeMultiplier))
 	}else{
-		d <- data.frame(Axis1=coord[,axis[1]], Axis2=coord[,axis[2]], group=group);
-		rownames(d)<-rownames(coord)
-		graph<-ggplot(data=d, mapping = aes(x=Axis1, y=Axis2,colour=group, label = rownames(d)))
+		d$group<-group;
+		groupIsFactor<-is.factor(group)
+		if(!is.null(emph)){
+			if(!emph%in%levels(group)) stop("emph value not in levels of group")
+			d$group<-as.character(d$group)
+			d$group[which(d$group!=emph)]<-NA
+			d$group<-as.factor(d$group)
+			d$sizeMultiplier[which(d$group==emph)]<-2*d$sizeMultiplier[which(d$group==emph)]
+		}
+		if(na.bg){
+			indexNA<-which(is.na(d$group))
+			indexNotNA<-which(!is.na(d$group))
+			if(length(indexNA)>0){
+				tempd<-d
+				tempd[1:length(indexNA),]<-d[indexNA,]
+				tempd[(length(indexNA)+1):nrow(d),]<-d[indexNotNA,]
+				d<-tempd
+			}
+		}
+		graph<-ggplot(data=d, mapping = aes(x=Axis1, y=Axis2, label = lab,size=sizeMultiplier,color=group,fill=group))
+		if(is.null(colorScale)){
+			colorScale<-c("grey","red")
+			if(groupIsFactor) colorScale<-ggplotColours(nlevels(group))
+		}
+		funColorScaleFill<-paste0("scale_fill_",ifelse(groupIsFactor,"manual","gradientn"))
+		funColorScaleColor<-paste0("scale_color_",ifelse(groupIsFactor,"manual","gradientn"))
+		paramColorScale<-list("name"=legendTitle,na.value=na.color)
+		paramColorScaleType<-ifelse(groupIsFactor,"values","colors");paramColorScale[[paramColorScaleType]]<-colorScale
+		graph<-graph+do.call(funColorScaleFill,paramColorScale)
+		graph<-graph+do.call(funColorScaleColor,paramColorScale)
 	}
-	graph<-graph+functPlot(size=pointSize)+
-		xlab(paste0("Axis",axis[1])) +
-		ylab(paste0("Axis",axis[2])) 
+	if(plotText){
+		graph<-graph+geom_text(alpha=alpha,size=pointSize)
+	}else{
+		if(is.null(group)){
+			graph<-graph+geom_point(stroke=1/8,colour = "black",shape=21,alpha=alpha,fill="black",size=pointSize)
+		}else{
+			graph<-graph+geom_point(stroke=1/8,colour = "black",shape=21,alpha=alpha,size=pointSize)
+		}		
+	}
+	if(is.null(axis.names)) axis.names<-paste0("Axis",axis)
+	graph<-graph+xlab(axis.names[1]) + ylab(axis.names[2])
 	if(!is.null(main)) graph <- graph + ggtitle(main)
-	if(ellipse) graph<-graph+stat_ellipse()
+	if(ellipse) graph<-graph+stat_ellipse(size=.5)
+	graph<-graph+theme(
+		panel.background = element_rect(fill = NA,colour="black"),
+		panel.grid.major = element_line(colour = NA),
+		panel.grid.minor = element_line(colour = NA)
+	) + guides(size=FALSE)
+
+	if(returnGraph) return(graph)
 	print(graph)
+}
+
+
+proj_densHex<-function(obj=NULL,coord=NULL, axis=1:2,group=NULL, main=NULL,bins=30,
+emph=NULL,colorScale=NULL,returnGraph=FALSE,legendTitle="Values",axis.names=NULL,na.color="grey50",na.bg=TRUE){
+	if(!(is.factor(group)|is.null(group))) stop("Error, group must be factor or null.")
+	if(is.null(coord)) coord<-obj$coord
+	if(!require("ggplot2")) stop("You must install ggplot2");
+	if(length(axis)!=2) stop("You must give a vector of 2 integer for axis parameter");
+	if((!is.null(axis.names)) & length(axis.names)!=2) stop("Error, if given axis.names parameter must contain 2 values.");
+	d <- data.frame(lab=rownames(coord),Axis1=coord[,axis[1]], Axis2=coord[,axis[2]]);
+	if(is.null(group)){
+		graph<-ggplot(data=d, mapping = aes(x=Axis1, y=Axis2, label = lab))
+	}else{
+		d$group<-group;
+		groupIsFactor<-is.factor(group)
+		if(is.null(emph))  stop("if group provided, you must provide emph")
+		if(!emph%in%levels(group)) stop("emph value not in levels of group")
+		d$group<-as.character(d$group)
+		d$group[which(d$group!=emph)]<-NA
+		d$group<-as.factor(d$group)
+		
+		if(na.bg){
+			indexNA<-which(is.na(d$group))
+			indexNotNA<-which(!is.na(d$group))
+			if(length(indexNA)>0){
+				tempd<-d
+				tempd[1:length(indexNA),]<-d[indexNA,]
+				tempd[(length(indexNA)+1):nrow(d),]<-d[indexNotNA,]
+				d<-tempd
+			}
+		}
+		graph<-ggplot(data=d, mapping = aes(x=Axis1, y=Axis2, label = lab,color=group))
+	}
+	if(is.null(colorScale)) colorScale=c("grey","red")
+	graph<-graph+scale_fill_gradientn(colors=colorScale)
+	graph<-graph+stat_bin_hex(bins=bins)
+	if(is.null(axis.names)) axis.names<-paste0("Axis",axis)
+	graph<-graph+xlab(axis.names[1]) + ylab(axis.names[2])
+	if(!is.null(main)) graph <- graph + ggtitle(main)
+	graph<-graph+theme(
+		panel.background = element_rect(fill = NA,colour="black"),
+		panel.grid.major = element_line(colour = NA),
+		panel.grid.minor = element_line(colour = NA)
+	) 
+
+	if(returnGraph) return(graph)
+	print(graph)
+}
+
+proj3d<-function(coord, axis=1:3, group=NULL, pointSize=5, plotText=FALSE,colorScale=NULL,na.color="grey50",na.bg=TRUE,alpha=1){
+	if(!(is.factor(group)|is.numeric(group)|is.null(group))) stop("Error, group must be numerical, factor or null.")
+	if(!require("rgl")) stop("You must install rgl");
+	if(!require("circlize")) stop("You must install circlize");
+	if(length(axis)!=3) stop("You must give a vector of 3 integer for axis parameter")
+	
+	if(is.null(group)){ colors="black"}
+	else{
+		if(na.bg){
+			indexNA<-which(is.na(group))
+			indexNotNA<-which(!is.na(group))
+			if(length(indexNA)>0){
+				tempc<-coord;tempc[1:length(indexNA),]<-coord[indexNA,];tempc[(length(indexNA)+1):nrow(coord),]<-coord[indexNotNA,];coord<-tempc;
+				tempg<-group;tempg[1:length(indexNA)]<-group[indexNA];tempg[(length(indexNA)+1):length(group)]<-group[indexNotNA];group<-tempg;
+			}
+		}
+		if(is.factor(group)){
+			if(is.null(colorScale)) colorScale<-rainbow(nlevels(group))
+			hashCol<-colorScale
+			names(hashCol)<-levels(group)
+			colors<-hashCol[group]
+		}else{
+			if(is.null(colorScale)) colorScale<-c("grey","red")
+			funCol<-colorRamp2(seq(min(group),max(group),length.out=length(colorScale)),colorScale)
+			colors<-funCol(group)
+		}
+	}
+	colors[is.na(colors)]<-na.color
+	plot3d(coord[,axis[1]],coord[,axis[2]],coord[,axis[3]],
+		xlab=paste0("Axis",axis[1]), 
+		ylab=paste0("Axis",axis[2]), 
+		zlab=paste0("Axis",axis[3]),
+		type="n")
+	if(plotText){
+		text3d(coord[,axis[1]],coord[,axis[2]],coord[,axis[3]],texts=rownames(coord),cex=pointSize,col=colors,alpha=alpha)
+	}else{
+		spheres3d(coord[,axis[1]],coord[,axis[2]],coord[,axis[3]],col=colors,radius=pointSize,alpha=alpha)
+	}
+	if(!is.null(group)){
+		if(is.factor(group)) legend3d("topright", legend = names(hashCol), pch = 16, col = hashCol, cex=1, inset=c(0.02))
+		if(is.numeric(group)) legend3d("topright", legend = c(min(group),max(group)), pch = 16, col = colorScale, cex=1, inset=c(0.02))
+	}
 }
 
 addIndivACP<-function(acp,indivs,transpose=TRUE,combineMat=TRUE){

@@ -240,6 +240,7 @@ retrieveSexHumanEmbryoACP<-function(d,patternLen=3){
 	return(res)
 }
 
+
 #' Easy and  quick view of expression
 #' @param expr dataframe or matrix. Expression.
 #' @param conditions dataframe of factors.  Sample table with sample in row and annotations in column.
@@ -258,6 +259,8 @@ retrieveSexHumanEmbryoACP<-function(d,patternLen=3){
 #' @param xLabelSize numeric. Size of x-axis labels
 #' @param colorType character. How ggplot color graph, 'fill', 'contour' or 'both'
 #' @param returnTab logical. Return processed data ready to plot by GGplot ?
+#' @param axis.names character. A two element vector containing axis names
+#' @param colorScale list or vector. If condition has one column, a character specifying color, else a list of character. 
 #' @param ... Additional parameter passed to ggplot2
 #' @return Nothing
 #' @examples
@@ -271,26 +274,34 @@ retrieveSexHumanEmbryoACP<-function(d,patternLen=3){
 #' sampleAnnot<-data.frame(group=as.factor(c(rep("g1",5),rep("g2",5))),row.names=samples)
 #'
 #' plotExpr(expr=expr,conditions=sampleAnnot,scale="log")
-plotExpr<-function(expr,conditions=NULL,legendName="gene",errorBar="se", ciRate=0.95,  geom="point", addLine=FALSE,  xaxis="gene", negValue=FALSE, 
-	scale="identity",breaks = waiver(),xRotationLab=0, hjust=0.5,main=NULL,xLabelSize=10, colorType="contour",returnTab=FALSE,...){
+plotExpr<-function(expr,conditions=NULL,legendName=NULL,errorBar="se", ciRate=0.95,  geom="point", addLine=FALSE,  xaxis="gene", negValue=FALSE, 
+	scale="identity",breaks = waiver(),xRotationLab=0, hjust=0.5,main=NULL,xLabelSize=10, colorType="contour",returnTab=FALSE,colorScale=NULL,axis.names=NULL,...){
 	
 	require(grid)
 	require(ggplot2)
 		
-	if(!errorBar%in%c("se","ci","na")) stop("errorBar must be 'ci' or 'se'")
+	if(!errorBar%in%c("se","ci","na")) stop("errorBar must be 'na', 'ci' or 'se'")
 	if(!xaxis%in%c("gene","annot")) stop("xaxis must be 'gene' or 'annot'")
 	if(!scale%in%c("identity","log")) stop("scale must be 'identity' or 'log'")
 	if(!colorType%in%c("contour","fill","both")) stop("scale must be 'identity' or 'log'")
 	
 	colorContour<-FALSE
 	colorFill<-FALSE
+	nullConditions<-is.null(conditions)
+	nullColorScale<-is.null(colorScale)
+	nullLegendName<-is.null(legendName)
+	colorScaleList<-NULL
 	if(colorType=="contour" | colorType=="both") colorContour=TRUE
 	if(colorType=="fill" | colorType=="both") colorFill=TRUE
 	
 	if(is.vector(expr))  expr<-t(data.frame(expr=expr,row.names = names(expr)))
-	if(is.null(conditions)) conditions<-data.frame(samples=as.factor(colnames(expr)))
-	if(is.vector(conditions))  conditions<-data.frame(cond=conditions,row.names = colnames(expr))
+	if(nullConditions){
+		conditions<-as.factor(colnames(expr))
+		errorBar<-"na"
+	}
+	if(!(is.data.frame(conditions)|is.matrix(conditions)))  conditions<-data.frame(cond=conditions,row.names = colnames(expr))
 	numPlots = ncol(conditions)
+	if(numPlots>1 & is.list(colorScale)) colorScaleList<-colorScale
 	cols<-floor(sqrt(numPlots))
 	layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
 	ncol = cols, nrow = ceiling(numPlots/cols))
@@ -302,14 +313,14 @@ plotExpr<-function(expr,conditions=NULL,legendName="gene",errorBar="se", ciRate=
 	
 	for(condIndex in 1:ncol(conditions)){
 		conditionName<-colnames(conditions)[condIndex]
+		if(!is.null(colorScaleList)) colorScale<-colorScaleList[[conditionName]]
 		cond<-unlist(conditions[,condIndex])
 		names(cond)<-rownames(conditions)
 		if(!is.factor(cond)) stop("You must give a factor dataframe/matrix") #Qualitatif
-			tabGraph<-data.frame(matrix(nrow = length(levels(cond))*nrow(expr),ncol=5))
-			colnames(tabGraph)<-c(conditionName,"means","errBarMin","errBarMax","gene")
-			tabGraph[,conditionName]<-rep(levels(cond),nrow(expr))
-			tabGraph$gene<-rep(rownames(expr),each=length(levels(cond)))
-
+		tabGraph<-data.frame(matrix(nrow = length(levels(cond))*nrow(expr),ncol=5))
+		colnames(tabGraph)<-c(conditionName,"means","errBarMin","errBarMax","gene")
+		tabGraph[,conditionName]<-rep(levels(cond),nrow(expr))
+		tabGraph$gene<-rep(rownames(expr),each=length(levels(cond)))
 		for(lvl in levels(cond)){
 			for(exprIndex in 1:nrow(expr)){
 				values<-unlist(expr[exprIndex,which(colnames(expr)%in%names(cond[which(cond==lvl)]))])
@@ -324,25 +335,24 @@ plotExpr<-function(expr,conditions=NULL,legendName="gene",errorBar="se", ciRate=
 
 		if(!negValue)tabGraph$errBarMin[which(tabGraph$means-tabGraph$errBarMin<0)]<-tabGraph$means[which(tabGraph$means-tabGraph$errBarMin<0)]
 		
-		if(xaxis=="annot"){
+		if(xaxis=="gene"){
 			g<-"gene"
 			x<-conditionName
 		}else{
 			g<-conditionName
 			x<-"gene"
 		}
-		paramAES<-list(y="means",x=x,group=g)
-			
-		if(colorContour) paramAES$colour= g
-		if(colorFill) paramAES$fill= g
-		
-		graph<-ggplot(data=tabGraph,mapping=do.call("aes_string",paramAES))
-		
-		if(geom=="bar"){
-			graph<-graph+geom_bar(stat = "identity",width=.4,position = "dodge",...)
-		}else{
-			graph<-graph+do.call(paste0("geom_",geom),list(...))
+		paramAES<-list(x=x,group=g)
+		if(!nullConditions){
+			if(colorContour) paramAES$colour= g
+			if(colorFill) paramAES$fill= g
 		}
+		addParam<-list(...)
+		if(geom=="bar"){
+			addParam$stat = "identity";addParam$width=.4;addParam$position = "dodge"
+		}
+		paramAES$y="means"
+		graph<-ggplot(data=tabGraph,mapping=do.call("aes_string",paramAES))+do.call(paste0("geom_",geom),addParam)
 		if(addLine) graph<-graph+geom_line()
 		
 		if(errorBar != "na"){
@@ -358,9 +368,19 @@ plotExpr<-function(expr,conditions=NULL,legendName="gene",errorBar="se", ciRate=
 		}else{
 			graph<-graph+scale_y_continuous(breaks=breaks)
 		}
-
+		
+		if(nullLegendName) legendName=g
+		if(nullColorScale) colorScale<-ggplotColours(nlevels(tabGraph[,g]))
+		if(colorFill) graph<-graph+scale_fill_manual(name=legendName,values=colorScale)
+		if(colorContour) graph<-graph+scale_color_manual(name=legendName,values=colorScale)
+		
 		if(! is.null(main)) graph<-graph+ggtitle(main)
-		graph<-graph+theme(axis.text.x = element_text(angle = xRotationLab, hjust = hjust,vjust=.3,size=xLabelSize))
+		if(is.null(axis.names)) axis.names<-c("","Expression")
+		graph<-graph+xlab(axis.names[1]) + ylab(axis.names[2])
+		graph<-graph+theme(axis.text.x = element_text(angle = xRotationLab, hjust = hjust,vjust=.3,size=xLabelSize),
+			panel.background = element_rect(fill = NA,colour="black"),
+			panel.grid.major = element_line(colour = "grey50"),
+			panel.grid.minor = element_line(colour = "grey50"))
 		matchidx <- as.data.frame(which(layout == condIndex, arr.ind = TRUE))
 		print(graph, vp = viewport(layout.pos.row = matchidx$row,layout.pos.col = matchidx$col))
 	}
@@ -384,7 +404,7 @@ UMI2UPM<-function(data){ #Normalisation UPM
 	return(data.UPM)
 }
 
-plotDistrib<-function(data,type="boxplot",conditions=NULL,main=NULL){
+plotDistrib<-function(data,type="boxplot",conditions=NULL,main=NULL,conditionName="Batch"){
   require(grid)
   require(ggplot2)
   #data : matrix of expression data
@@ -403,7 +423,7 @@ plotDistrib<-function(data,type="boxplot",conditions=NULL,main=NULL){
   if(is.null(conditions)){
     graph<-ggplot(data = tabGraph,mapping = aes(sample,val))
   }else{
-    graph<-ggplot(data = tabGraph,mapping = aes(sample,val,color=cond))
+    graph<-ggplot(data = tabGraph,mapping = aes_string("sample","val",color=conditionName))
   }
   
     graph<-graph+theme(axis.text.x = element_text(angle = 90, hjust = 1,vjust=.3))
@@ -414,3 +434,68 @@ plotDistrib<-function(data,type="boxplot",conditions=NULL,main=NULL){
   print(graph)
 }
 
+#Return gene id correspondance, GO species code and KEGG species code
+getSpeciesData<-function(sample.species="Human",genes,updateSpeciesPackage=FALSE){
+	require(gage)
+	data(bods)
+	species<-list()
+	species.data<-data.frame(bods)
+	species.index<-which(species.data$species==sample.species)
+	if(len(species.index)!=1) stop("Wrong species name, type \"species.data$species\" to see available species")
+	species$package<-as.character(species.data[species.index,"package"])
+	species$kegg<-as.character(species.data[species.index,"kegg.code"])
+	species$go<-strsplit(as.character(species$package),split = ".",fixed = TRUE)[[1]][2]
+	if(updateSpeciesPackage) biocLite(species$package)
+	library(species$package,character.only = TRUE)
+	species$GeneIdTable<-select(get(species$package),genes, "ENTREZID","SYMBOL")
+	return(species)
+}
+
+#Optimal cutree on hclust
+best.cutree <- function(hc, min=3, max=20, loss=FALSE, graph=FALSE, ...){
+  if (class(hc)!="hclust") hc <- as.hclust(hc)
+  max <- min(max, length(hc$height))
+  inert.gain <- rev(hc$height)
+  intra <- rev(cumsum(rev(inert.gain)))
+  relative.loss = intra[min:(max)]/intra[(min - 1):(max - 1)]
+  best = which.min(relative.loss)
+  names(relative.loss) <- min:max
+  if (graph) {
+	temp <- relative.loss
+	temp[best] <- NA
+	best2 <- which.min(temp)
+	pch <- rep(1, max-min+1)
+	pch[best] <- 16
+	pch[best2] <- 21
+	plot(min:max, relative.loss, pch=pch, bg="grey75", ...)
+  } else {
+	if (loss)
+	  relative.loss
+	else
+	  best + min - 1
+  }
+}
+
+Enrich<-function(x, corrIdGenes,db=c("reactom"),nperm=1000,returnLeadingEdge=FALSE,...){
+	require(fgsea)
+	geneSym<-names(x)
+	convID<-NULL
+	if(db=="reactom") convID<- "ENTREZ"
+	if(convID=="ENTREZ"){
+		geneEntrez<-ConvertKey(names(x),tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID")
+		new_x<-x[!is.na(geneEntrez)]
+		names(new_x)<-geneEntrez[!is.na(geneEntrez)]
+	}
+	
+	if(db=="reactom"){ 
+		db_terms<- reactomePathways(names(new_x))
+	}
+	res<-fgsea(db_terms, new_x,nperm=nperm,...)
+	res<-res[order(res$pval),]
+	if(returnLeadingEdge){
+		if(convID=="ENTREZ") res$leadingEdge<- sapply(res$leadingEdge,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL")
+	}else{
+		res<-res[,-8]
+	}
+	return(res)
+}

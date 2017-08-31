@@ -9,6 +9,13 @@
 	4- Change all necessary parameters in section #Config param#
 	5- Run the script
 
+#Warning
+	-Sample Names must not contain special character like '(/-', but can contain dot.
+	-Do not open expression file with Excel: Excel converts some gene names into date.
+	-Don't hesitate to remove abnormal sample (see figs/DistribCountPerSample.pdf and results/SamplesAbstract.tsv).
+	-With fdrtool package, Q-value has a minumim of 1.09048e-14, that can explain the clumping effect on the 2nd page of Volcano plots.
+	-For each condition you must have a minimum n of 2, otherwise you can run the script up to 'save.image("rsave/Step2.R.RData")'
+
 #Session info
 	R version 3.3.1 (2016-06-21)
 	Platform: x86_64-w64-mingw32/x64 (64-bit)
