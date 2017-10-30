@@ -10,7 +10,7 @@
 	5- Run the script
 
 #Warning
-	-Sample Names must not contain special character like '(/-', but can contain dot.
+	-Sample Names must not contain special character like '(/-', but can contain dot. Condition names must not contain '_' (underscore)
 	-Do not open expression file with Excel: Excel converts some gene names into date.
 	-Don't hesitate to remove abnormal sample (see figs/DistribCountPerSample.pdf and results/SamplesAbstract.tsv).
 	-With fdrtool package, Q-value has a minumim of 1.09048e-14, that can explain the clumping effect on the 2nd page of Volcano plots.
@@ -54,7 +54,7 @@
 	[73] Rgraphviz_2.18.0     digest_0.6.11        diptest_0.75-7       xtable_1.8-2         httpuv_1.3.3         munsell_0.4.3       
 
 #Credit and thanks
-	Pipeline writed by Dimitri Meistermann, University of Nantes, PHD student in computational biology
+	Pipeline writen by Dimitri Meistermann, University of Nantes, PHD student in computational biology
 	at CRTI (UMR 1064) and LS2N (UMR 6241).
 	mail: dimitri.meistermann@univ-nantes.fr
 	PHD supervised by Jérémie Bourdon (UMR 6241) and Laurent David (UMR 1064).

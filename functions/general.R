@@ -9,16 +9,16 @@ inter<-intersect;
 
 lire<-function(x, character=FALSE){
 	if(character){
-		d<-read.table(file = x,sep = "\t",header=T,row.names = 1,colClasses = "character")
+		d<-read.table(file = x,sep = "\t",header=T,row.names = 1,colClasses = "character",quote="")
 	}else{
-		d<-read.table(file = x,sep = "\t",header=T,row.names = 1)
+		d<-read.table(file = x,sep = "\t",header=T,row.names = 1,,quote="")
 	}
 	return(d)
 }
 
 ecrire<-function(x,file="default.tsv",headRow="Name"){
 	options(warn=-1) #Supress unecessary warning about append 
-	write.table(x = "NAME\t",file = file,sep = "\t",eol="",quote=F,row.names=F,col.names=F)
+	write.table(x = paste0(headRow,"\t"),file = file,sep = "\t",eol="",quote=F,row.names=F,col.names=F)
 	write.table(x=x,file=file,sep="\t", row.names = T, col.names = T, quote = FALSE,append=T)
 	options(warn=0)
 }
@@ -333,3 +333,5 @@ ggplotColours <- function(n = 6, h = c(0, 360) + 15){
     if ((diff(h) %% 360) < 1) h[2] <- h[2] - 360/n
     hcl(h = (seq(h[1], h[2], length = n)), c = 100, l = 65)
 }
+
+rmNA<- function(x) x<-x[!is.na(x)]

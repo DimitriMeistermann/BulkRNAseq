@@ -414,7 +414,6 @@ for(comp in compsDE){ #for each comparison
     resultTopGO.elim[[comp]][[ont]]  <- runTest(GOdata[[comp]][[ont]], algorithm = "elim", statistic = "Fisher" )
     resultTopGO.classic[[comp]][[ont]]<-runTest(GOdata[[comp]][[ont]], algorithm = "classic", statistic = "Fisher" )
     
-    
     pValue.classic <- score(resultTopGO.classic[[comp]][[ont]])
     pValue.elim <-    score(resultTopGO.elim[[comp]][[ont]])[names(pValue.classic)]
     gstat <- termStat(GOdata[[comp]][[ont]], names(pValue.classic))
@@ -504,7 +503,7 @@ data(go.gs)
 
 go.species <- go.gsets(tolower(sample.species), id.type="entrez")
 kg.species <- kegg.gsets(tolower(sample.species), id.type="entrez")
-go.gs.bp <- go.species$go.sets[go.species$go.subs$BP]
+go.gs.bp <-
 kegg.gs <- kg.species$kg.sets[kg.species$sigmet.idx]
 
 groupIndex<-list()

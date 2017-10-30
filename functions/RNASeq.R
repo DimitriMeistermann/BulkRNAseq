@@ -476,26 +476,121 @@ best.cutree <- function(hc, min=3, max=20, loss=FALSE, graph=FALSE, ...){
   }
 }
 
-Enrich<-function(x, corrIdGenes,db=c("reactom"),nperm=1000,returnLeadingEdge=FALSE,...){
+Enrich<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),way="upreg",maxSize=500,nperm=1000,customAnnot=NULL,returnLeadingEdge=FALSE,
+  keggDisease=FALSE,species="Human",returnTerm=FALSE,...){
 	require(fgsea)
-	geneSym<-names(x)
-	convID<-NULL
-	if(db=="reactom") convID<- "ENTREZ"
-	if(convID=="ENTREZ"){
-		geneEntrez<-ConvertKey(names(x),tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID")
-		new_x<-x[!is.na(geneEntrez)]
-		names(new_x)<-geneEntrez[!is.na(geneEntrez)]
-	}
+	validDBs<-c("kegg","reactom","goBP","goCC","goMF","custom")
+	if(!(combineLogical(database%in%validDBs))) stop(paste0("Error, valid values for database are: ",paste0(validDBs,collapse=", ")))
+	if(!(way%in%c("upreg","downreg","both"))) stop("Error, valid values for way are: upreg, downreg or both") 
+	if(is.null(customAnnot) & "custom"%in%database) stop("You must give a value a list in customAnnot if database=custom")
 	
-	if(db=="reactom"){ 
-		db_terms<- reactomePathways(names(new_x))
+	if(is.data.frame(x) | is.matrix(x)){
+		tempx<-x
+		x<-tempx[,1]
+		names(x)<-rownames(tempx)
 	}
-	res<-fgsea(db_terms, new_x,nperm=nperm,...)
-	res<-res[order(res$pval),]
-	if(returnLeadingEdge){
-		if(convID=="ENTREZ") res$leadingEdge<- sapply(res$leadingEdge,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL")
-	}else{
-		res<-res[,-8]
+	options(warn=-1)
+	if(is.null(corrIdGenes)) corrIdGenes<-getSpeciesData(species,names(x))$GeneIdTable
+	geneSym<-names(x)
+	geneEntrez<-ConvertKey(names(x),tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID")
+	new_x<-x[!is.na(geneEntrez)]
+	names(new_x)<-geneEntrez[!is.na(geneEntrez)]
+	
+	if(way=="downreg") new_x <- -new_x
+	if(way=="both")    new_x <- abs(new_x)
+	
+	db_terms<-list()
+	if(is.list(customAnnot)) db_terms$custom<-customAnnot
+	
+	if(!(length(database)<=1 & database[1]=="custom")){
+		if("reactom"%in%database){ 
+			require("reactome.db")
+			db_terms$reactom<- reactomePathways(names(new_x))
+		}
+		if("kegg"%in%database){
+			require("gage")
+			kg.species <- kegg.gsets(tolower(species), id.type="entrez")
+			db_terms$kegg<- if(keggDisease) kg.species$kg.sets else kg.species$kg.sets[kg.species$sigmet.idx]
+		}
+		if("go"%in%substr(database,1,2)){
+			require("gage")
+			go.species <- go.gsets(tolower(species), id.type="entrez")
+			if("goBP"%in%database) db_terms$goBP<-go.species$go.sets[go.species$go.subs$BP]
+			if("goMF"%in%database) db_terms$goMF<-go.species$go.sets[go.species$go.subs$MF]
+			if("goCC"%in%database) db_terms$goCC<-go.species$go.sets[go.species$go.subs$CC]
+		}
 	}
+	options(warn=0)
+	if(length(db_terms)==0) stop("Error, no term in any database was found")
+	if(returnTerm) return(db_terms)
+	res<-list()
+	for(db in names(db_terms)){
+		res[[db]]<-fgsea(db_terms[[db]], new_x,nperm=nperm,maxSize=maxSize,...)
+		res[[db]]<-res[[db]][order(res[[db]]$NES),]
+		res[[db]]$leadingEdge<- if(returnLeadingEdge) sapply(res[[db]]$leadingEdge,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL") else NULL
+		res[[db]]$database<-db
+	}
+	res<-do.call("rbind", res)
 	return(res)
+}
+
+###ViewKEGG####
+viewKEGG<-function(x,pathway,corrIdGenes=NULL,species="Human"){	
+	if(is.data.frame(x) | is.matrix(x)){
+		tempx<-x
+		x<-tempx[,1]
+		names(x)<-rownames(tempx)
+	}
+	if(is.null(corrIdGenes)) corrIdGenes<-getSpeciesData(species,names(x))$GeneIdTable
+	entrezId<-corrIdGenes[corrIdGenes$SYMBOL%in%names(x),"ENTREZID"];
+	notNA<-which(!is.na(entrezId))
+	dat<-x[notNA];
+	names(dat)<-entrezId[notNA]
+	pathview(gene.data = dat, pathway.id = pathway, species = "hsa",kegg.native=TRUE,low="blue",mid="white",high="red",na.col="black")
+}
+
+
+
+
+###Fonction pour retrouver les branch "Heatmap branch" de monocle
+retrieveBranch<-function(cds,branch_point){
+  require(monocle)
+  require(igraph)
+  pr_graph_cell_proj_mst <- minSpanningTree(cds)
+  
+  root_cell <- cds@auxOrderingData[[cds@dim_reduce_type]]$root_cell
+  root_state <- pData(cds)[root_cell, ]$State
+  pr_graph_root <- subset(pData(cds), State == root_state)
+  
+  closest_vertex <- cds@auxOrderingData[["DDRTree"]]$pr_graph_cell_proj_closest_vertex
+  root_cell_point_in_Y <- closest_vertex[row.names(pr_graph_root), ]
+  
+  root_cell <- names(which(igraph::degree(pr_graph_cell_proj_mst, v = root_cell_point_in_Y, 
+                                  mode = "all") == 1, useNames = T))[1]
+  paths_to_root <- list()
+  
+  pr_graph_cell_proj_mst <- minSpanningTree(cds)
+  
+  mst_branch_nodes <- cds@auxOrderingData[[cds@dim_reduce_type]]$branch_points
+  branch_cell <- mst_branch_nodes[branch_point] #Récupérer nom échantillon branch point
+  mst_no_branch_point <- pr_graph_cell_proj_mst - V(pr_graph_cell_proj_mst)[branch_cell]
+  path_to_ancestor <- shortest_paths(pr_graph_cell_proj_mst, 
+                                     branch_cell, root_cell)
+  path_to_ancestor <- names(unlist(path_to_ancestor$vpath))
+  for (backbone_nei in V(pr_graph_cell_proj_mst)[suppressWarnings(nei(branch_cell))]$name) {
+    descendents <- bfs(mst_no_branch_point, V(mst_no_branch_point)[backbone_nei], 
+                       unreachable = FALSE)
+    descendents <- descendents$order[!is.na(descendents$order)]
+    descendents <- V(mst_no_branch_point)[descendents]$name
+    if (root_cell %in% descendents == FALSE) {
+      path_to_root <- unique(c(path_to_ancestor, branch_cell, 
+                               descendents))
+      closest_vertex <- cds@auxOrderingData[["DDRTree"]]$pr_graph_cell_proj_closest_vertex
+      path_to_root <- row.names(closest_vertex)[which(V(pr_graph_cell_proj_mst)[closest_vertex]$name %in% path_to_root)]
+      closest_vertex <- cds@auxOrderingData[["DDRTree"]]$pr_graph_cell_proj_closest_vertex
+      path_to_root <- intersect(path_to_root, colnames(cds))
+      paths_to_root[[backbone_nei]] <- path_to_root
+    }
+  }
+  return(paths_to_root)
 }
