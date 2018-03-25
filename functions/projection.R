@@ -1,7 +1,6 @@
 ###############################################################################
 # FONCTIONS POUR L'ACP                                                        #
 ###############################################################################
-
 # ACP
 # Paramètre :	Table R des données
 # Sortie :	un objet de type ACP
@@ -12,7 +11,6 @@ ACP<-function(d,transpose=T,scale=F,center=T) {
 	resacp$percentVar<- resacp$sdev^2 / sum( resacp$sdev^2 )
 	return(resacp);
 }
-
 	
 # Fonctions présentes dans R pour interpréter une ACP :
 # soient "acp" un objet de type acp et T la table des données
@@ -24,8 +22,6 @@ ACP<-function(d,transpose=T,scale=F,center=T) {
 # Graphique des inerties (valeurs propres) : plot(acp)
 # Plan principal : biplot(acp)
 # Plan i x j : biplot(acp,c(c1=i, c2=j))
-
-
 #Tableau des inerties et des pourcentages cumulés
 # Paramètre : résultat ACP
 # Sortie : tableau des inerties, pourcentages et pourcentages cumulés
@@ -41,15 +37,11 @@ VP <- function(resacp) {
 		tab[i,3] <- 100*s1/s;
 	};
 	return(tab)}
-
-
 # Corrélations entre les axes et les variables initiales
 # Paramètres :	table R des données
 #		résultat ACP (produit par princomp)
 # Sortie :	la matrice des corrélations
 AXEVAR <- function(resacp) {return(resacp$rotation)}
-
-
 # Corrélations entre les k premiers axes et les variables initiales
 # Paramètres :	table R des données
 #		résultat ACP (produit par princomp)
@@ -58,7 +50,6 @@ AXEVAR <- function(resacp) {return(resacp$rotation)}
 AXEVARk <- function(d,resacp,k) {
 	return(resacp$rotation[,1:k])
 }
-
 # Contribution de la ligne i à l'inertie de l'axe j
 # Paramètres :	résultat ACP
 #		numéro ligne
@@ -68,8 +59,6 @@ CTRij <- function(resacp,i,j) {
 	x <- resacp$rotation[i,j]^2/(resacp$n.obs * resacp$sdev[j]^2);
         x <- 100*x;
 	return(x)}
-
-
 # Tableau des contribution des lignes aux axes
 # Paramètres :	résultat ACP
 #		nombre axes
@@ -81,7 +70,6 @@ CTR <- function(resacp, nbax) {
 		for (i in 1:resacp$n.obs) matrice[i,j] <- CTRij(resacp,i,j);
      
        return(matrice)}
-
 # Fonction utilitaire
 SOMME2 <- function(resacp) {
 	N <- resacp$n.obs ; M <- ncol(resacp$x);
@@ -90,7 +78,6 @@ SOMME2 <- function(resacp) {
 		for (j in 1:M) s2[i] <- s2[i] + resacp$x[i,j]^2;
 	return(s2)
 }
-
 # Cosinus ** 2 des angles de projection
 # Paramètres :	résultat ACP
 #		nombre axes
@@ -104,7 +91,6 @@ COS2TETA <- function(resacp, nbax) {
 		for (j in 1:nbax) c2teta[i,j] <- resacp$x[i,j]^2 / s2[i];
 	return(c2teta)
 }
-
 ############################################################
 #PLOTS													   #
 ############################################################
@@ -113,10 +99,7 @@ COS2TETA <- function(resacp, nbax) {
 #		premier axe choisi
 #		deuxième axe choisi	
 PLAN <- function(resacp,i,j) {biplot(resacp,c(c1=i,c2=j))}
-
-
 # visualisation 3d ggplot
-
 acp3d<-function(pca, comp=1:3, group=rep(1,pca$n.obs), plotVars = FALSE, pointSize=2, plotText=FALSE){
 	if(!require("rgl")) stop("You must install rgl");
 	if(length(comp)!=3) stop("You must give a vector of 3 integer for comp parameter")
@@ -131,7 +114,6 @@ acp3d<-function(pca, comp=1:3, group=rep(1,pca$n.obs), plotVars = FALSE, pointSi
 		names(hashCol)<-levels(group)
 		colors<-hashCol[group]
 	}
-
 	
 	percentVar <- pca$percentVar
 	plot3d(x[,comp[1]],x[,comp[2]],x[,comp[3]],
@@ -146,12 +128,10 @@ acp3d<-function(pca, comp=1:3, group=rep(1,pca$n.obs), plotVars = FALSE, pointSi
 	if(plotVars) spheres3d(x=0,y=0,z=0, radius = 1,alpha=0.5,color="white")
 	spheres3d(x=0,y=0,z=0, radius = 0.005,alpha=1,color="red")
 }
-
 # visualisation 2d ggplot
 acp2d<-function(pca, comp=1:2,group=NULL, plotVars = FALSE, pointSize=2, plotText=FALSE,fixedCoord=FALSE,main=NULL,ellipse=FALSE,color=NULL){
 	if(!require("ggplot2")) stop("You must install ggplot2");
 	if(length(comp)!=2) stop("You must give a vector of 2 integer for comp parameter");
-
 	percentVar <- pca$percentVar
 	functPlot<-ifelse(plotText,geom_text,geom_point)
 	coor=ifelse(plotVars,"rotation","x")
@@ -163,7 +143,6 @@ acp2d<-function(pca, comp=1:2,group=NULL, plotVars = FALSE, pointSize=2, plotTex
 		d <- data.frame(PC1=pca[[coor]][,comp[1]], PC2=pca[[coor]][,comp[2]], group=group);
 		graph<-ggplot(data=d, mapping = aes(x=PC1, y=PC2,colour=group, label = rownames(d)))
 	}
-
 	graph<-graph+functPlot(size=pointSize)+
 		xlab(paste0("PC",comp[1],": ",round(percentVar[comp[1]] * 100),"% variance")) +
 		ylab(paste0("PC",comp[2],": ",round(percentVar[comp[2]] * 100),"% variance")) 
@@ -174,19 +153,15 @@ acp2d<-function(pca, comp=1:2,group=NULL, plotVars = FALSE, pointSize=2, plotTex
 	
 	print(graph)
 }
-
 ###############################################################################
 # Projections d'une partition (obtenue ici avec hclust) sur un plan factoriel #
 # (ici : projection sur le plan principal)                                    #
 ###############################################################################
-
 # Paramètres : résultat de l'acp (renvoyé par princomp),
 #              résultat de la cah (renvoyé par hclust),
 #              nombre de classes de la cah
-
 # Sortie : les éléments des classes projetés sur le plan principal
 #          une couleur par classes
-
 CAHsurACP<-function(acp,cah,k){
     n<-acp$obs
     classe<-cutree(cah,k)
@@ -198,11 +173,9 @@ CAHsurACP<-function(acp,cah,k){
     }
     plot (acp$scores[,1],acp$scores[,2], col=couleur)
 }
-
 ##########################
 #Autre type de projection#
 ##########################
-
 merge0dist<-function(disMat){
 	mat<-as.matrix(disMat)
 	merged<-list()
@@ -227,7 +200,6 @@ merge0dist<-function(disMat){
 	}
 	return(list(distMat=as.dist(mat),merged=merged))
 }
-
 NMDS<-function(data,transpose=TRUE,scale=FALSE,center=FALSE,metric=dist,ndim=2,maxit=100){
 	merged<-FALSE
 	require(MASS)
@@ -251,7 +223,6 @@ NMDS<-function(data,transpose=TRUE,scale=FALSE,center=FALSE,metric=dist,ndim=2,m
 	}
 	return(fit)
 }
-
 proj2d<-function(obj=NULL,coord=NULL, axis=1:2,group=NULL, pointSize=3, plotText=FALSE,main=NULL,alpha=9/10, 
 ellipse=FALSE,emph=NULL,colorScale=NULL,returnGraph=FALSE,legendTitle="Values",axis.names=NULL,na.color="grey50",na.bg=TRUE){
 	if(!(is.factor(group)|is.numeric(group)|is.null(group))) stop("Error, group must be numerical, factor or null.")
@@ -312,12 +283,9 @@ ellipse=FALSE,emph=NULL,colorScale=NULL,returnGraph=FALSE,legendTitle="Values",a
 		panel.grid.major = element_line(colour = NA),
 		panel.grid.minor = element_line(colour = NA)
 	) + guides(size=FALSE)
-
 	if(returnGraph) return(graph)
 	print(graph)
 }
-
-
 proj_densHex<-function(obj=NULL,coord=NULL, axis=1:2,group=NULL, main=NULL,bins=30,
 emph=NULL,colorScale=NULL,returnGraph=FALSE,legendTitle="Values",axis.names=NULL,na.color="grey50",na.bg=TRUE){
 	if(!(is.factor(group)|is.null(group))) stop("Error, group must be factor or null.")
@@ -360,11 +328,9 @@ emph=NULL,colorScale=NULL,returnGraph=FALSE,legendTitle="Values",axis.names=NULL
 		panel.grid.major = element_line(colour = NA),
 		panel.grid.minor = element_line(colour = NA)
 	) 
-
 	if(returnGraph) return(graph)
 	print(graph)
 }
-
 proj3d<-function(coord, axis=1:3, group=NULL, pointSize=5, plotText=FALSE,colorScale=NULL,na.color="grey50",na.bg=TRUE,alpha=1){
 	if(!(is.factor(group)|is.numeric(group)|is.null(group))) stop("Error, group must be numerical, factor or null.")
 	if(!require("rgl")) stop("You must install rgl");
@@ -408,7 +374,6 @@ proj3d<-function(coord, axis=1:3, group=NULL, pointSize=5, plotText=FALSE,colorS
 		if(is.numeric(group)) legend3d("topright", legend = c(min(group),max(group)), pch = 16, col = colorScale, cex=1, inset=c(0.02))
 	}
 }
-
 addIndivACP<-function(acp,indivs,transpose=TRUE,combineMat=TRUE){
   indivs<-as.matrix(indivs)
   if(transpose)indivs<-t(indivs)
@@ -422,7 +387,6 @@ addIndivACP<-function(acp,indivs,transpose=TRUE,combineMat=TRUE){
     return(newTab)
   }
 }
-
 #' Add grids to a scatterplot3d
 #' 
 #' @description The goal of this function is to add grids on an existing

@@ -190,7 +190,8 @@ examineRNAseqSamples<-function(x, uncenter= FALSE){
 	return(data.frame(mean=mean, sd=sd,CV=CV,TotalGenEx=noGenEx,TotalCount=count))
 }
 
-retrieveSexHumanEmbryoKmeans<-function(d,patternLen=3){
+retrieveSexHumanEmbryoKmeans<-function(d,group){
+	group<-droplevels(as.factor(group))
 	#return a matrix of count of "male" and "female" predicted cells in each embryo (Kmeans method)
 	maleGene<-c("DDX3Y","EIF1AY","TTTY15","RPS4Y1")
 	k<-kmeans(t(d[maleGene,]),2)
@@ -201,8 +202,8 @@ retrieveSexHumanEmbryoKmeans<-function(d,patternLen=3){
 		mf<-c("M","F")
 	}
 	count<-as.factor(mf[k$cluster])
-	names(count)<-substr(colnames(d),1,patternLen)
-	embryos<-as.factor(unique(substr(colnames(d),1,patternLen)))
+	embryos<-as.factor(levels(group))
+	names(count)<-group
 	res<-list()
 	res$count<-data.frame(matrix(ncol=2,nrow=length(embryos)))
 	colnames(res$count)<-c("Male","Female")
@@ -404,6 +405,12 @@ UMI2UPM<-function(data){ #Normalisation UPM
 	return(data.UPM)
 }
 
+TPMfullLength<-function(data, gene.length){
+	gene.length.kb <- gene.length[rn(data)]/1000
+	data<-sweep(data, 1, gene.length.kb,`/`)
+	return(UMI2UPM(data))
+}
+
 plotDistrib<-function(data,type="boxplot",conditions=NULL,main=NULL,conditionName="Batch"){
   require(grid)
   require(ggplot2)
@@ -451,6 +458,30 @@ getSpeciesData<-function(sample.species="Human",genes,updateSpeciesPackage=FALSE
 	return(species)
 }
 
+#Take a gene list, add transcription factor data and long Gene name
+detailOnGenes<-function(x,tfDat,speciesDat){
+	require(AnnotationDbi)
+	if(is.data.frame(x) | is.matrix(x)){
+		geneSym<-rn(x)
+		res<-data.frame(x)
+	}else{
+		if(is.null(names(x))){
+			res<-data.frame(row.names=x)
+			geneSym<-x
+		}else{
+			geneSym<-names(x)
+			res<-data.frame(val=x,row.names=names(x))
+		}
+	}
+	geneNames<-select(get(speciesDat$package),geneSym,"GENENAME","SYMBOL")
+	res$LongName<-ConvertKey(geneSym,tabKey = geneNames,colOldKey = "SYMBOL",colNewKey = "GENENAME")
+	genesTF<-intersect(rn(tfDat),geneSym)
+	res$TFdegree<-0
+	res[genesTF,"TFdegree"]<-tfDat[genesTF,"tf_degree"]
+	return(res)
+}
+
+
 #Optimal cutree on hclust
 best.cutree <- function(hc, min=3, max=20, loss=FALSE, graph=FALSE, ...){
   if (class(hc)!="hclust") hc <- as.hclust(hc)
@@ -479,6 +510,8 @@ best.cutree <- function(hc, min=3, max=20, loss=FALSE, graph=FALSE, ...){
 Enrich<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),way="upreg",maxSize=500,nperm=1000,customAnnot=NULL,returnLeadingEdge=FALSE,
   keggDisease=FALSE,species="Human",returnTerm=FALSE,...){
 	require(fgsea)
+	require(AnnotationDbi)
+	select<-AnnotationDbi::select
 	validDBs<-c("kegg","reactom","goBP","goCC","goMF","custom")
 	if(!(combineLogical(database%in%validDBs))) stop(paste0("Error, valid values for database are: ",paste0(validDBs,collapse=", ")))
 	if(!(way%in%c("upreg","downreg","both"))) stop("Error, valid values for way are: upreg, downreg or both") 
@@ -495,6 +528,7 @@ Enrich<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),way="upreg",ma
 	geneEntrez<-ConvertKey(names(x),tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID")
 	new_x<-x[!is.na(geneEntrez)]
 	names(new_x)<-geneEntrez[!is.na(geneEntrez)]
+	geneEntrez<-names(new_x)
 	
 	if(way=="downreg") new_x <- -new_x
 	if(way=="both")    new_x <- abs(new_x)
@@ -505,7 +539,7 @@ Enrich<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),way="upreg",ma
 	if(!(length(database)<=1 & database[1]=="custom")){
 		if("reactom"%in%database){ 
 			require("reactome.db")
-			db_terms$reactom<- reactomePathways(names(new_x))
+			db_terms$reactom<- reactomePathways(geneEntrez)
 		}
 		if("kegg"%in%database){
 			require("gage")
@@ -525,6 +559,9 @@ Enrich<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),way="upreg",ma
 	if(returnTerm) return(db_terms)
 	res<-list()
 	for(db in names(db_terms)){
+		db_terms[[db]]<-sapply(db_terms[[db]],function(term){
+		  term[term %in% geneEntrez]
+		})
 		res[[db]]<-fgsea(db_terms[[db]], new_x,nperm=nperm,maxSize=maxSize,...)
 		res[[db]]<-res[[db]][order(res[[db]]$NES),]
 		res[[db]]$leadingEdge<- if(returnLeadingEdge) sapply(res[[db]]$leadingEdge,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL") else NULL
@@ -533,6 +570,81 @@ Enrich<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),way="upreg",ma
 	res<-do.call("rbind", res)
 	return(res)
 }
+
+EnrichFisher<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),maxSize=500,minSize=2,returnGene=FALSE, keggDisease=FALSE,species="Human"){
+	require(AnnotationDbi)
+	select<-AnnotationDbi::select
+	validDBs<-c("kegg","reactom","goBP","goCC","goMF","custom")
+	if(!(combineLogical(database%in%validDBs))) stop(paste0("Error, valid values for database are: ",paste0(validDBs,collapse=", ")))
+	if(is.null(customAnnot) & "custom"%in%database) stop("You must give a value a list in customAnnot if database=custom")
+
+	if(is.data.frame(x) | is.matrix(x)){
+		tempx<-x
+		x<-tempx[,1]
+		names(x)<-rownames(tempx)
+	}
+
+	if(is.null(corrIdGenes)) corrIdGenes<-getSpeciesData(species,names(x))$GeneIdTable
+	geneSym<-names(x)
+	geneEntrez<-ConvertKey(names(x),tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID")
+	new_x<-x[!is.na(geneEntrez)]
+	names(new_x)<-geneEntrez[!is.na(geneEntrez)]
+	geneEntrez<-names(new_x)
+
+	db_terms<-list()
+	if(is.list(customAnnot)) db_terms$custom<-customAnnot
+
+	if(!(length(database)<=1 & database[1]=="custom")){
+		if("reactom"%in%database){ 
+			require("reactome.db")
+			db_terms$reactom<- reactomePathways(geneEntrez)
+		}
+		if("kegg"%in%database){
+			require("gage")
+			kg.species <- kegg.gsets(tolower(species), id.type="entrez")
+			db_terms$kegg<- if(keggDisease) kg.species$kg.sets else kg.species$kg.sets[kg.species$sigmet.idx]
+			db_terms$kegg
+		}
+		if("go"%in%substr(database,1,2)){
+			require("gage")
+			go.species <- go.gsets(tolower(species), id.type="entrez")
+			if("goBP"%in%database) db_terms$goBP<-go.species$go.sets[go.species$go.subs$BP]
+			if("goMF"%in%database) db_terms$goMF<-go.species$go.sets[go.species$go.subs$MF]
+			if("goCC"%in%database) db_terms$goCC<-go.species$go.sets[go.species$go.subs$CC]
+		}
+	}
+
+	nInterest<-length(which(new_x))
+	nNotInterest<-length(which(!new_x))
+
+	results<-list()
+	for(db in names(db_terms)){
+		db_terms[[db]]<-sapply(db_terms[[db]],function(term){
+			term[term %in% geneEntrez]
+		})
+
+		len_term<-sapply(db_terms[[db]],length)
+		db_terms[[db]]<-db_terms[[db]][len_term>=minSize & len_term<=maxSize]
+
+		nGeneByterm<-sapply(db_terms[[db]],length)
+		nGeneOfInterestByterm<-sapply( db_terms[[db]],function(term){
+			return(length(which(new_x[term])))
+		})
+		results[[db]]<-data.frame(row.names = names(db_terms[[db]]))
+		results[[db]]$pval<-phyper(q = nGeneOfInterestByterm-0.5, m = nInterest,n = nNotInterest, k = nGeneByterm, lower.tail=FALSE)
+		results[[db]]$padj<-p.adjust(results[[db]]$pval,method = "BH")
+		results[[db]]$nGeneOfInterest<-nGeneOfInterestByterm
+		results[[db]]$nGene<-nGeneByterm
+		if(returnGene){
+			results[[db]]$Genes<- sapply(db_terms[[db]],function(term){
+				term[term%in%geneEntrez[new_x]]
+			});
+			results[[db]]$Genes<- sapply(results[[db]]$Genes,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL")
+		}
+	}
+	return(results)
+}
+
 
 ###ViewKEGG####
 viewKEGG<-function(x,pathway,corrIdGenes=NULL,species="Human"){	
@@ -549,8 +661,16 @@ viewKEGG<-function(x,pathway,corrIdGenes=NULL,species="Human"){
 	pathview(gene.data = dat, pathway.id = pathway, species = "hsa",kegg.native=TRUE,low="blue",mid="white",high="red",na.col="black")
 }
 
-
-
+####Convert 2 Entrez
+Sym2Entrez<-function(x, corrIdGenes=NULL,species="Human"){
+	require(AnnotationDbi)
+	select<-AnnotationDbi::select
+	validDBs<-c("kegg","reactom","goBP","goCC","goMF","custom")
+	options(warn=-1)
+	if(is.null(corrIdGenes)) corrIdGenes<-getSpeciesData(species,x)$GeneIdTable
+	return(ConvertKey(x,tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID"))
+}
+	
 
 ###Fonction pour retrouver les branch "Heatmap branch" de monocle
 retrieveBranch<-function(cds,branch_point){
@@ -593,4 +713,20 @@ retrieveBranch<-function(cds,branch_point){
     }
   }
   return(paths_to_root)
+}
+
+unsupervisedClustering<-function(x,transpose=TRUE,method.dist="pearson",method.hclust="ward.D2",bootstrap=FALSE,nboot=10){
+	if(transpose) x<-t(x)
+	if(bootstrap){
+		require(pvclust)
+		resClust<-pvclust(t(x),nboot=nboot,method.hclust = method.hclust,parallel = TRUE,method.dist = method.dist)$hclust
+	}else{
+		if(method.dist=="pearson"){
+			resDist<-corrDist(x)
+		}else{
+			resDist<-dist(x, method = method.dist)
+		}
+		resClust<-stats::hclust(resDist,method = method.hclust)
+	}
+	return(resClust)
 }

@@ -23,13 +23,16 @@ ecrire<-function(x,file="default.tsv",headRow="Name"){
 	options(warn=0)
 }
 
-gmean<-function(x, keepZero=F){ #moyenne géometrique
-	if(sum(x)==0) return(0)
-	if(!keepZero){
-		x<-x[which(x!=0)]
-	}
-	return( prod(x)^(1/length(x)) )
+gmean<-function(x, keepZero=FALSE){ #moyenne géometrique
+  if(sum(x)==0) return(0)
+  if(!keepZero){
+    x<-x[x!=0]
+  }else{
+    if(length(which(x==0))>0) return(0)
+  }
+  return( prod(x)^(1/length(x)) )
 }
+
 
 plotText<-function(cols,label=colnames(cols),cex=.4,xlab="",ylab="",main=""){
 	plot(cols,type="n",xlab=xlab,ylab=ylab,main=main)
@@ -104,11 +107,15 @@ uncenter<-function(x){
 	return(x+abs(min(x)));
 }
 
-takefirst<-function(x){
+takefirst<-function(x,returnIndex=FALSE){
 	uniqDat<-unique(x)
 	caseUniq<-c()
 	for(i in uniqDat) caseUniq<-c(caseUniq,which(i==x)[1])
-	return(x[caseUniq])
+	if(returnIndex){
+		return(caseUniq)
+	}else{
+		return(x[caseUniq])
+	}
 }
 
 
@@ -335,3 +342,16 @@ ggplotColours <- function(n = 6, h = c(0, 360) + 15){
 }
 
 rmNA<- function(x) x<-x[!is.na(x)]
+
+convertColorAdd2Sub<-function(red,green,blue){
+	newRed=rowMeans(cbind(1-green,1-blue))
+	newGreen=rowMeans(cbind(1-red,1-blue))
+	newBlue=rowMeans(cbind(1-red,1-green))
+	return(data.frame("red"=newRed,"green"=newGreen,"blue"=newBlue))
+}
+
+recursiveFun<-function(argList,fun){
+  if(len(argList)==2) return(fun(argList[1][[1]],argList[2][[1]]))
+  return(fun(argList[1][[1]],recursiveFun(argList[-1],fun)))
+}
+
