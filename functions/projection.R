@@ -223,8 +223,8 @@ NMDS<-function(data,transpose=TRUE,scale=FALSE,center=FALSE,metric=dist,ndim=2,m
 	}
 	return(fit)
 }
-proj2d<-function(obj=NULL,coord=NULL, axis=1:2,group=NULL, pointSize=3, plotText=FALSE,main=NULL,alpha=9/10, 
-ellipse=FALSE,emph=NULL,colorScale=NULL,returnGraph=FALSE,legendTitle="Values",axis.names=NULL,na.color="grey50",na.bg=TRUE){
+proj2d<-function(coord, axis=1:2,group=NULL, pointSize=3, plotText=FALSE,main=NULL,alpha=9/10, 
+ellipse=FALSE,emph=NULL,colorScale=NULL,returnGraph=FALSE,legendTitle="Values",axis.names=NULL,na.color="grey50",na.bg=TRUE,obj=NULL){
 	if(!(is.factor(group)|is.numeric(group)|is.null(group))) stop("Error, group must be numerical, factor or null.")
 	if(is.null(coord)) coord<-obj$coord
 	if(!require("ggplot2")) stop("You must install ggplot2");
@@ -512,4 +512,35 @@ addgrids3d <- function(x, y=NULL, z=NULL, grid = TRUE,
              x.min, i , col = col.grid, lty = lty.grid)
     }
   
+}
+
+
+#Rotate point
+rotate<-function(coord,angle,center=c(0,0)){
+  x<-coord[,1]
+  y<-coord[,2]
+  xP<-x*cos(angle)+y*sin(angle)
+  yP<- -x*sin(angle)+y*cos(angle)
+  centerRot<-c(center[1]*cos(angle)+center[2]*sin(angle),-center[1]*sin(angle)+center[2]*cos(angle))
+  transX<-center[1]-centerRot[1]
+  transY<-center[2]-centerRot[2]
+  return(cbind(xP+transX,yP+transY))
+}
+
+
+rotate3dim<-function(coord,angle,center=c(0,0,0),axes=c(1,2)){
+	if(length(axes)!=2) stop("you must give two axes for rotating the 3 space dimension")
+	rotCoord<-rotate(coord[,axes],angle,center = center[axes])
+	newCoord<-coord
+	for(i in 1:2) newCoord[,axes[i]]<-rotCoord[,i]
+	newCoord
+}
+
+rotate3dimSubSpace<-function(coord,angle,center=c(0,0,0),axes=c(1,2),which.sample=rownames(coord)){
+	row_names<-rownames(coord)
+	coord2Rotate<-coord[which.sample,]
+	coordNotRotated<-coord[!row_names%in%which.sample ,]
+	rotatedCoord<-rotate3dim(coord2Rotate,angle,center=center,axes=axes)
+	newCoord<-rbind(rotatedCoord,coordNotRotated)
+	newCoord[row_names,]
 }

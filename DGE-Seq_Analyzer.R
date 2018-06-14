@@ -39,7 +39,7 @@ batchCol<-"Run" #Name of batch column in sample table for batch correction, 'NUL
 #advanced parameters
 sample.species<-"Human" #data(bods); print(bods) #to see available species
 AdjPVaLthreshold<-0.05 #Benjamini & Hochberg pvalue threshold to consider a gene as differentially expressed
-QValthreshold<-0.05 #local adjusted fdr threshold to consider a gene as differentially expressed (package fdrtool)
+LocalFDRthreshold<-0.05 #local adjusted fdr threshold to consider a gene as differentially expressed (package fdrtool)
 Enrichthreshold<-0.05 #adjusted p-val threshold for enrichment test
 logFCthreshold<-1 #Absolute Log2(Fold-Change) threshold (if logFCthreshold=1, gene is differentially expressed if expressed 2 time more or less between folds)
 nTopGo<-100 #n TOp Go Term/Ontology
@@ -234,7 +234,7 @@ for(comp in comps){
   cond2<-compMatrix[2,comp]
   sampleByComp[[comp]]<-samples[sampleAnnot[,condCol]%in% c(cond1,cond2)]
   #DESeq results for each comparison
-  res[[comp]]<-results(dds, contrast=c(condCol,cond1,cond2), independentFiltering = TRUE)
+  res[[comp]]<-results(dds, contrast=c(condCol,cond1,cond2), independentFiltering = TRUE,alpha = min(LocalFDRthreshold,AdjPVaLthreshold))
   res[[comp]]$meanInComp<-rowMeans(exprDatN[,sampleAnnot[,condCol]%in%compMatrix[,comp]])
 }
 
@@ -251,7 +251,7 @@ for(comp in comps){
     FDR.res[[comp]][[item]]<-rep(NA,length(genes))
     FDR.res[[comp]][[item]][which(!is.na(res[[comp]]$stat))]<-stat
   }
-  DE[[comp]]$fdr.qval<-FDR.res[[comp]]$qval
+  DE[[comp]]$localFDR<-FDR.res[[comp]]$qval
 }
 
 #sample/group correspondence 
@@ -261,8 +261,8 @@ names(sampleGroupVector)<-colnames(dds)
 DE.sel<-list()
 for(comp in comps){
   DE.sel[[comp]]<-list()
-  DE.sel[[comp]]$up<-DE[[comp]][which(DE[[comp]]$padj<AdjPVaLthreshold & DE[[comp]]$log2FoldChange > logFCthreshold &  DE[[comp]]$fdr.qval<QValthreshold),]
-  DE.sel[[comp]]$down<-DE[[comp]][which(DE[[comp]]$padj<AdjPVaLthreshold & DE[[comp]]$log2FoldChange < -logFCthreshold &  DE[[comp]]$fdr.qval<QValthreshold),]
+  DE.sel[[comp]]$up<-DE[[comp]][which(DE[[comp]]$padj<AdjPVaLthreshold & DE[[comp]]$log2FoldChange > logFCthreshold &  DE[[comp]]$localFDR<LocalFDRthreshold),]
+  DE.sel[[comp]]$down<-DE[[comp]][which(DE[[comp]]$padj<AdjPVaLthreshold & DE[[comp]]$log2FoldChange < -logFCthreshold &  DE[[comp]]$localFDR<LocalFDRthreshold),]
   DE.sel[[comp]]$isDE<-rbind(DE.sel[[comp]]$up,DE.sel[[comp]]$down)
   DE.sel[[comp]]$notDE<-DE[[comp]][setdiff(rn(DE[[comp]]),rn(DE.sel[[comp]]$isDE)),]
   DE[[comp]]$DE<-"NONE"
@@ -273,9 +273,21 @@ for(comp in comps){
 
 for(comp in comps) ecrire(DE[[comp]],paste0("results/DESeqRes_",comp,".tsv"))
 
+###P val histogram###
+for(comp in comps){
+	histList<-list()
+	for(ptype in c("pvalue","padj","localFDR")){
+		histList[[ptype]]<-ggplot(data.frame(DE[[comp]]),mapping=aes_string(ptype))+
+			geom_histogram(binwidth = 0.05)+
+			geom_hline(yintercept = median(table(cut(DE[[comp]][,ptype],breaks = seq(0,1,0.05),include.lowest = FALSE))))
+	}
+	pdf(paste0("figs/pvalHistogram_",comp,".pdf"),width = 8,height = 10)
+	multiplot(plotlist = histList,cols = 1)
+	dev.off()
+}
+
 
 #####Volcano plots#####
-
 
 for(comp in comps){
   cond1<-compMatrix[1,comp]
@@ -291,14 +303,14 @@ for(comp in comps){
   if(nrow(DE.sel[[comp]]$down)>0) text(DE.sel[[comp]]$down$log2FoldChange,-log10(DE.sel[[comp]]$down$padj),labels = rownames(DE.sel[[comp]]$down),cex=.2,col="green")
   points(DE.sel[[comp]]$notDE$log2FoldChange,-log10(DE.sel[[comp]]$notDE$padj),cex=.2,col="black",pch=16)
   
-  plot(DE[[comp]]$log2FoldChange,-log10(DE[[comp]]$fdr.qval),type="n",ylab="-log10(qval)",xlab="log2(Fold-Change)",col="black",
+  plot(DE[[comp]]$log2FoldChange,-log10(DE[[comp]]$localFDR),type="n",ylab="-log10(qval)",xlab="log2(Fold-Change)",col="black",
        main=paste0("Volcano plot of comparison ",cond1," (pos FC) VS ",cond2," (neg FC)\nLocal adjusted fdr method (",nrow(DE.sel[[comp]]$isDE),"/",nrow(DE[[comp]])," DE genes)"))
-  abline(h=-log10(QValthreshold))
+  abline(h=-log10(LocalFDRthreshold))
   abline(v = -logFCthreshold)
   abline(v = logFCthreshold)
-  if(nrow(DE.sel[[comp]]$up)>0) text(DE.sel[[comp]]$up$log2FoldChange,-log10(DE.sel[[comp]]$up$fdr.qval),labels = rownames(DE.sel[[comp]]$up),cex=.2,col="red")
-  if(nrow(DE.sel[[comp]]$down)>0) text(DE.sel[[comp]]$down$log2FoldChange,-log10(DE.sel[[comp]]$down$fdr.qval),labels = rownames(DE.sel[[comp]]$down),cex=.2,col="green")
-  points(DE.sel[[comp]]$notDE$log2FoldChange,-log10(DE.sel[[comp]]$notDE$fdr.qval),cex=.2,col="black",pch=16)
+  if(nrow(DE.sel[[comp]]$up)>0) text(DE.sel[[comp]]$up$log2FoldChange,-log10(DE.sel[[comp]]$up$localFDR),labels = rownames(DE.sel[[comp]]$up),cex=.2,col="red")
+  if(nrow(DE.sel[[comp]]$down)>0) text(DE.sel[[comp]]$down$log2FoldChange,-log10(DE.sel[[comp]]$down$localFDR),labels = rownames(DE.sel[[comp]]$down),cex=.2,col="green")
+  points(DE.sel[[comp]]$notDE$log2FoldChange,-log10(DE.sel[[comp]]$notDE$localFDR),cex=.2,col="black",pch=16)
   
   dev.off()
 }
@@ -427,23 +439,22 @@ save.image("rsave/Step3.R.RData")
 ####Functionnal Enrichment####
 
 logFC<-list()
+scoreEnrich<-list()
 enrichRes<-list()
 compWtPathway<-c()
 ### Several GO term ###
+enrichDBs<-getDBterms(rn(exprW), speciesData=species.data,database=c("kegg","reactom","goBP","goCC","goMF"))
+
 for(comp in compsDE){
   logFC[[comp]] = res[[comp]]$log2FoldChange;names(logFC[[comp]])<-rn(res[[comp]])
-  enrichRes[[comp]]<-Enrich(logFC[[comp]],corrIdGenes = species.data$GeneIdTable,
-    returnLeadingEdge = TRUE,database = c("kegg","reactom","goBP","goCC","goMF"))
+  scoreEnrich[[comp]]<-calConsensusRanking(rn(res[[comp]]),logFC[[comp]],res[[comp]]$pvalue)
+  enrichRes[[comp]]<-Enrich(scoreEnrich[[comp]],corrIdGenes = species.data$GeneIdTable,
+    returnLeadingEdge = TRUE,db_terms = enrichDBs)
+  exportEnrich(enrichRes[[comp]],paste0("results/Enrich_",comp,".tsv"))
   if(length(which(enrichRes[[comp]]$padj<Enrichthreshold))>0) compWtPathway<-c(compWtPathway,comp)
   enrichRes[[comp]]<-enrichRes[[comp]][enrichRes[[comp]]$padj<Enrichthreshold,]
 }
 
-enrichResExport<-lapply(enrichRes,function(pathComp){
-  pathComp$Gene<-sapply(pathComp$leadingEdge,function(x,sep="\t"){ return(paste0(x,collapse=sep))})
-  pathComp$leadingEdge<-NULL
-  return(pathComp)
-})
-for(comp in compWtPathway) write.table(enrichResExport[[comp]],paste0("results/enrich_",comp,".tsv"),quote = FALSE,sep = "\t",col.names = TRUE,row.names = FALSE)
 
 dir.create("figs/enrich",showWarnings = FALSE)
 for(comp in compWtPathway){

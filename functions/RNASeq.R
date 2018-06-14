@@ -507,62 +507,42 @@ best.cutree <- function(hc, min=3, max=20, loss=FALSE, graph=FALSE, ...){
   }
 }
 
-Enrich<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),way="upreg",maxSize=500,nperm=1000,customAnnot=NULL,returnLeadingEdge=FALSE,
-  keggDisease=FALSE,species="Human",returnTerm=FALSE,...){
+# 3rd generation enrichment (fgsea algorithm)
+#' @param x : vector or dataframe/matrix of one column. Values are used to classify the genes, example, it can be Log2(Fold-Change0). Genes are contained in the names/rownames of the vector/dataframe. Example of valid x: x<-rnorm(n = 4); names(x)<-c("GATA2","SOX17","KLF4","POU5F1")
+#' @param corrIdGenes : dataframe of genes id (used to convert genes), automatically computed if not provided
+#' @param database Which annotation database ? valid: database: kegg reactom goBP goCC goMF custom
+#' @param minSize : mininmum number of gene in each term
+#' @param maxSize : maximum number of gene in each term
+#' @param nperm : number of permutation in the GSEA algorithm
+#' @param customAnnot : custom annotation database, as a list af gene symbols, named by annotations name
+#' @param returnLeadingEdge : return genes that were the most important for the enrichment of term
+#' @param keggDisease : retain kegg disease term ?
+#' @param species : species, example: "Rat", "Mouse", "Human"
+#' @param db_terms : precomputed list of term database, automatically computed if not provided
+#' @param ... : additionnal parameters that are passed to fgsea
+Enrich<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),maxSize=500,minSize=2,nperm=1000,customAnnot=NULL,returnLeadingEdge=FALSE,
+  keggDisease=FALSE,species="Human",db_terms=NULL,...){
 	require(fgsea)
 	require(AnnotationDbi)
 	select<-AnnotationDbi::select
-	validDBs<-c("kegg","reactom","goBP","goCC","goMF","custom")
-	if(!(combineLogical(database%in%validDBs))) stop(paste0("Error, valid values for database are: ",paste0(validDBs,collapse=", ")))
-	if(!(way%in%c("upreg","downreg","both"))) stop("Error, valid values for way are: upreg, downreg or both") 
-	if(is.null(customAnnot) & "custom"%in%database) stop("You must give a value a list in customAnnot if database=custom")
 	
 	if(is.data.frame(x) | is.matrix(x)){
 		tempx<-x
 		x<-tempx[,1]
 		names(x)<-rownames(tempx)
 	}
-	options(warn=-1)
+	if(class(x)!="numeric") stop("Values must be numerical")
+	if(class(names(x))!="character") stop("Values must be named with genes symbol")
 	if(is.null(corrIdGenes)) corrIdGenes<-getSpeciesData(species,names(x))$GeneIdTable
 	geneSym<-names(x)
 	geneEntrez<-ConvertKey(names(x),tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID")
 	new_x<-x[!is.na(geneEntrez)]
 	names(new_x)<-geneEntrez[!is.na(geneEntrez)]
-	geneEntrez<-names(new_x)
-	
-	if(way=="downreg") new_x <- -new_x
-	if(way=="both")    new_x <- abs(new_x)
-	
-	db_terms<-list()
-	if(is.list(customAnnot)) db_terms$custom<-customAnnot
-	
-	if(!(length(database)<=1 & database[1]=="custom")){
-		if("reactom"%in%database){ 
-			require("reactome.db")
-			db_terms$reactom<- reactomePathways(geneEntrez)
-		}
-		if("kegg"%in%database){
-			require("gage")
-			kg.species <- kegg.gsets(tolower(species), id.type="entrez")
-			db_terms$kegg<- if(keggDisease) kg.species$kg.sets else kg.species$kg.sets[kg.species$sigmet.idx]
-		}
-		if("go"%in%substr(database,1,2)){
-			require("gage")
-			go.species <- go.gsets(tolower(species), id.type="entrez")
-			if("goBP"%in%database) db_terms$goBP<-go.species$go.sets[go.species$go.subs$BP]
-			if("goMF"%in%database) db_terms$goMF<-go.species$go.sets[go.species$go.subs$MF]
-			if("goCC"%in%database) db_terms$goCC<-go.species$go.sets[go.species$go.subs$CC]
-		}
-	}
-	options(warn=0)
+	if(is.null(db_terms)) db_terms<-getDBterms(geneSym=geneSym,geneEntrez=geneEntrez, corrIdGenes=corrIdGenes,database=database,customAnnot=customAnnot,keggDisease=keggDisease,species=species)
 	if(length(db_terms)==0) stop("Error, no term in any database was found")
-	if(returnTerm) return(db_terms)
 	res<-list()
 	for(db in names(db_terms)){
-		db_terms[[db]]<-sapply(db_terms[[db]],function(term){
-		  term[term %in% geneEntrez]
-		})
-		res[[db]]<-fgsea(db_terms[[db]], new_x,nperm=nperm,maxSize=maxSize,...)
+		res[[db]]<-fgsea(db_terms[[db]], new_x,nperm=nperm,minSize=minSize,maxSize=maxSize,...)
 		res[[db]]<-res[[db]][order(res[[db]]$NES),]
 		res[[db]]$leadingEdge<- if(returnLeadingEdge) sapply(res[[db]]$leadingEdge,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL") else NULL
 		res[[db]]$database<-db
@@ -571,7 +551,18 @@ Enrich<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),way="upreg",ma
 	return(res)
 }
 
-EnrichFisher<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),maxSize=500,minSize=2,returnGene=FALSE, keggDisease=FALSE,species="Human"){
+# 2nd generation enrichment (fisher algorithm)
+#' @param x : vector or dataframe/matrix of one column. Values are booleans and say if gene is from the list of interest or not. Genes are contained in the names/rownames of the vector/dataframe. Example of valid x: x<-c(TRUE,TRUE,FALSE,FALSE); names(x)<-c("GATA2","SOX17","KLF4","POU5F1"). In this case, GATA2, SOX17, KLF4, POU5F1 are the universe of gene and GATA2 and SOX17 are the genes of interest
+#' @param corrIdGenes : dataframe of genes id (used to convert genes), automatically computed if not provided
+#' @param database Which annotation database ? valid: database: kegg reactom goBP goCC goMF custom
+#' @param minSize : mininmum number of gene in each term
+#' @param maxSize : maximum number of gene in each term
+#' @param customAnnot : custom annotation database, as a list af gene symbols, named by annotations name
+#' @param returnGenes : return genes of interest that are in the term 
+#' @param keggDisease : retain kegg disease term ?
+#' @param db_terms : precomputed list of term database, automatically computed if not provided
+#' @param species : species, example: "Rat", "Mouse", "Human"
+EnrichFisher<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),minSize=2,maxSize=500,returnGenes=FALSE, keggDisease=FALSE,species="Human",customAnnot=NULL,db_terms=NULL){
 	require(AnnotationDbi)
 	select<-AnnotationDbi::select
 	validDBs<-c("kegg","reactom","goBP","goCC","goMF","custom")
@@ -583,6 +574,9 @@ EnrichFisher<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),maxSize=
 		x<-tempx[,1]
 		names(x)<-rownames(tempx)
 	}
+	
+	if(class(x)!="logical") stop("Values must be logical (TRUE or FALSE)")
+	if(class(names(x))!="character") stop("Values must be named with genes symbol")
 
 	if(is.null(corrIdGenes)) corrIdGenes<-getSpeciesData(species,names(x))$GeneIdTable
 	geneSym<-names(x)
@@ -591,19 +585,72 @@ EnrichFisher<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),maxSize=
 	names(new_x)<-geneEntrez[!is.na(geneEntrez)]
 	geneEntrez<-names(new_x)
 
-	db_terms<-list()
-	if(is.list(customAnnot)) db_terms$custom<-customAnnot
+	if(is.null(db_terms)) db_terms<-getDBterms(geneSym=geneSym,geneEntrez=geneEntrez, corrIdGenes=corrIdGenes,database=database,customAnnot=customAnnot,keggDisease=keggDisease,species=species)
 
+	nInterest<-length(which(new_x))
+	nNotInterest<-length(which(!new_x))
+
+	results<-list()
+	for(db in names(db_terms)){
+		len_term<-sapply(db_terms[[db]],length)
+		db_terms[[db]]<-db_terms[[db]][len_term>=minSize & len_term<=maxSize]
+
+		nGeneByterm<-sapply(db_terms[[db]],length)
+		nGeneOfInterestByterm<-sapply( db_terms[[db]],function(term){
+			return(length(which(new_x[term])))
+		})
+		results[[db]]<-data.frame(row.names = names(db_terms[[db]]))
+		results[[db]]$pathway<- names(db_terms[[db]])
+		results[[db]]$pval<-phyper(q = nGeneOfInterestByterm-0.5, m = nInterest,n = nNotInterest, k = nGeneByterm, lower.tail=FALSE)
+		results[[db]]$padj<-p.adjust(results[[db]]$pval,method = "BH")
+		results[[db]]$nGeneOfInterest<-nGeneOfInterestByterm
+		results[[db]]$nGene<-nGeneByterm
+		results[[db]]$database<-db
+		if(returnGenes){
+			results[[db]]$Genes<- sapply(db_terms[[db]],function(term){
+				term[term%in%geneEntrez[new_x]]
+			});
+			results[[db]]$Genes<- sapply(results[[db]]$Genes,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL")
+		}
+	}
+	do.call("rbind", results)
+}
+
+
+getDBterms<-function(geneSym,geneEntrez=NULL, corrIdGenes=NULL, speciesData=NULL,database=c("kegg","reactom","goBP","goCC","goMF"),customAnnot=NULL,
+	keggDisease=FALSE,species="Human",returnGenesSymbol=FALSE){
+	require(AnnotationDbi)
+	select<-AnnotationDbi::select
+	validDBs<-c("kegg","reactom","goBP","goCC","goMF","custom")
+	if(!(combineLogical(database%in%validDBs))) stop(paste0("Error, valid values for database are: ",paste0(validDBs,collapse=", ")))
+	if(is.null(customAnnot) & "custom"%in%database) stop("You must give a value a list in customAnnot if database=custom")
+	if(is.null(speciesData)){
+		speciesData<-getSpeciesData(species,geneSym)
+	}
+	if(is.null(corrIdGenes)) corrIdGenes<-speciesData$GeneIdTable
+	options(warn=-1)
+	if(is.null(geneEntrez)){
+		geneEntrez<-ConvertKey(geneSym,tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID")
+		geneEntrez<-geneEntrez[!is.na(geneEntrez)]
+	}
+	db_terms<-list()
+	if(is.list(customAnnot)){
+		db_terms$custom<-lapply(customAnnot,function(x){
+			new_x<-ConvertKey(x,tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID")
+			new_x[!is.na(new_x)]
+		})
+	}
 	if(!(length(database)<=1 & database[1]=="custom")){
 		if("reactom"%in%database){ 
+			require("fgsea")
 			require("reactome.db")
 			db_terms$reactom<- reactomePathways(geneEntrez)
+			db_terms$reactom<-db_terms$reactom[unique(names(db_terms$reactom))]
 		}
 		if("kegg"%in%database){
 			require("gage")
-			kg.species <- kegg.gsets(tolower(species), id.type="entrez")
+			kg.species <- kegg.gsets(speciesData$kegg, id.type="entrez")
 			db_terms$kegg<- if(keggDisease) kg.species$kg.sets else kg.species$kg.sets[kg.species$sigmet.idx]
-			db_terms$kegg
 		}
 		if("go"%in%substr(database,1,2)){
 			require("gage")
@@ -613,40 +660,37 @@ EnrichFisher<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),maxSize=
 			if("goCC"%in%database) db_terms$goCC<-go.species$go.sets[go.species$go.subs$CC]
 		}
 	}
-
-	nInterest<-length(which(new_x))
-	nNotInterest<-length(which(!new_x))
-
-	results<-list()
+	
 	for(db in names(db_terms)){
 		db_terms[[db]]<-sapply(db_terms[[db]],function(term){
 			term[term %in% geneEntrez]
 		})
-
-		len_term<-sapply(db_terms[[db]],length)
-		db_terms[[db]]<-db_terms[[db]][len_term>=minSize & len_term<=maxSize]
-
-		nGeneByterm<-sapply(db_terms[[db]],length)
-		nGeneOfInterestByterm<-sapply( db_terms[[db]],function(term){
-			return(length(which(new_x[term])))
-		})
-		results[[db]]<-data.frame(row.names = names(db_terms[[db]]))
-		results[[db]]$pval<-phyper(q = nGeneOfInterestByterm-0.5, m = nInterest,n = nNotInterest, k = nGeneByterm, lower.tail=FALSE)
-		results[[db]]$padj<-p.adjust(results[[db]]$pval,method = "BH")
-		results[[db]]$nGeneOfInterest<-nGeneOfInterestByterm
-		results[[db]]$nGene<-nGeneByterm
-		if(returnGene){
-			results[[db]]$Genes<- sapply(db_terms[[db]],function(term){
-				term[term%in%geneEntrez[new_x]]
-			});
-			results[[db]]$Genes<- sapply(results[[db]]$Genes,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL")
-		}
 	}
-	return(results)
+	options(warn=0)
+	
+	if(returnGenesSymbol){
+		lapply(db_terms,function(db) lapply(db,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL"))
+	}else{
+		db_terms
+	}
 }
 
+exportEnrich<-function(enrichResults,file,quote = FALSE,sep = "\t",col.names = TRUE,row.names = FALSE,geneCol="leadingEdge",...){
+	enrichResults$Gene<-sapply(enrichResults[[geneCol]],function(x){ return(paste0(x,collapse=sep))})
+	enrichResults[[geneCol]]<-NULL
+	write.table(enrichResults,file,quote = quote,sep = sep,col.names = col.names,row.names = row.names,...)
+}
+
+calConsensusRanking<-function(genes,pvalues,logFoldChanges){
+	pvalues <- 1-pvalues; abslogFoldChanges<-abs(logFoldChanges)
+	dataRank<-data.frame(pval=pvalues,LFC=abslogFoldChanges,row.names=genes)
+	rankRes<-apply(dataRank,1,gmean)
+	rankRes[logFoldChanges<0]<- -rankRes[logFoldChanges<0]
+	rankRes
+}
 
 ###ViewKEGG####
+#x : 
 viewKEGG<-function(x,pathway,corrIdGenes=NULL,species="Human"){	
 	if(is.data.frame(x) | is.matrix(x)){
 		tempx<-x
@@ -715,6 +759,9 @@ retrieveBranch<-function(cds,branch_point){
   return(paths_to_root)
 }
 
+
+
+# x : matrix
 unsupervisedClustering<-function(x,transpose=TRUE,method.dist="pearson",method.hclust="ward.D2",bootstrap=FALSE,nboot=10){
 	if(transpose) x<-t(x)
 	if(bootstrap){
@@ -729,4 +776,73 @@ unsupervisedClustering<-function(x,transpose=TRUE,method.dist="pearson",method.h
 		resClust<-stats::hclust(resDist,method = method.hclust)
 	}
 	return(resClust)
+}
+
+
+genTopAnnot<-function(annot,colTopAnnot=NULL){
+	annot<-droplevels(annot)
+	if(is.null(colTopAnnot)){
+		colTopAnnot<-vector("list", ncol(annot))
+		names(colTopAnnot)<-cn(annot)
+		colFun<-c(ggplotColours,rainbow)
+		i<-1
+		for(col in cn(annot)){
+		  colTopAnnot[[col]]<-colFun[[i]](nlevels(annot[,col]))
+		  names(colTopAnnot[[col]])<-levels(annot[,col])
+		  i<-i+1
+		  if(i==4) i<-1
+		}
+	}else{
+		colTopAnnot<-colTopAnnot[cn(annot)]
+	}
+	HeatmapAnnotation(annot,col = colTopAnnot)
+}
+
+heatmap.DM<-function(matrix,clustering_distance_rows=corrDist,clustering_distance_columns="euclidean",clustering_method_columns="ward.D2",
+	clustering_method_rows="ward.D2",autoFontSizeRow=TRUE,autoFontSizeColumn=TRUE,scale=TRUE,center=TRUE,returnHeatmap=FALSE,name="Z-scored\nexpression",
+	additionnalRowNamesGpar=list(fontface="italic"),additionnalColNamesGpar=list(),colorScale=NULL,cluster_rows=NULL,cluster_columns=NULL,...){
+	require("ComplexHeatmap")
+	require("circlize")
+	args<-list()
+	if(is.null(cluster_rows)){
+		args$clustering_method_rows<-clustering_method_rows
+		args$clustering_distance_rows<-clustering_distance_rows
+	}else{
+		args$cluster_rows<-cluster_rows
+	}
+	if(is.null(cluster_columns)){
+		args$clustering_method_columns<-clustering_method_columns
+		args$clustering_distance_columns<-clustering_distance_columns
+	}else{
+		args$cluster_columns<-cluster_columns
+	}
+	matrix<-as.matrix(matrix)
+	if(min(apply(matrix,2,sd))==0){
+		warning("some row have a 0 sd. sd-based method (correlation distance, scaling) will be desactivated or switched.")
+		scale=FALSE
+		if(identical(corrDist,clustering_distance_rows)){
+			args$clustering_distance_rows<-"euclidean"
+		}
+	}
+
+	if(scale | center) matrix<-rowScale(matrix,scaled=scale,center=center)
+	
+	if(is.null(colorScale)){
+		quantiles<-quantile(unlist(matrix),probs=c(0.05,0.25,0.5,0.75,0.95))
+		colorScale<-colorRamp2(breaks=c(quantiles),colors=c("blue","cyan","white","orange","red"))
+	}
+	args$col<-colorScale
+	args$name=name
+	args<-c(args,list(...))
+	
+	if(autoFontSizeRow) args$row_names_gp=do.call("autoGparFontSizeMatrix",c(list(nrow(matrix)),additionnalRowNamesGpar))
+	if(autoFontSizeColumn) args$column_names_gp=do.call("autoGparFontSizeMatrix",c(list(ncol(matrix)),additionnalColNamesGpar))
+	
+	args$matrix<-matrix
+	ht<-do.call("Heatmap",args)
+	if(returnHeatmap){
+		return(ht)
+	}else{
+		print(ht)
+	}
 }

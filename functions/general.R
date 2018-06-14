@@ -7,19 +7,18 @@ len<-length;
 inter<-intersect;
 #>
 
-lire<-function(x, character=FALSE){
-	if(character){
-		d<-read.table(file = x,sep = "\t",header=T,row.names = 1,colClasses = "character",quote="")
-	}else{
-		d<-read.table(file = x,sep = "\t",header=T,row.names = 1,,quote="")
-	}
-	return(d)
+lire<-function(x, sep = "\t",header=T,row.names = 1,quote="",...){
+	read.table(file=x,sep=sep,header=header,row.names = row.names,quote=quote,...)
 }
 
-ecrire<-function(x,file="default.tsv",headRow="Name"){
+ecrire<-function(x,file="default.tsv",headRow="Name",row.names=TRUE,col.names=TRUE,...){
 	options(warn=-1) #Supress unecessary warning about append 
-	write.table(x = paste0(headRow,"\t"),file = file,sep = "\t",eol="",quote=F,row.names=F,col.names=F)
-	write.table(x=x,file=file,sep="\t", row.names = T, col.names = T, quote = FALSE,append=T)
+	if(row.names && col.names){
+		write.table(x = paste0(headRow,"\t"),file = file,sep = "\t",eol="",quote=F,row.names=F,col.names=F)
+		write.table(x=x,file=file,sep="\t", row.names = T, col.names = T, quote = FALSE,append=T,...)
+	}else{
+		write.table(x=x,file=file,sep="\t", row.names = row.names, col.names = col.names, quote = FALSE,...)
+	}
 	options(warn=0)
 }
 
@@ -175,10 +174,10 @@ aggregRows<-function(dataframe,vector,fun=mean){
   return(res)
 }
 
-autoGparFontSizeMatrix<-function(n){ #Calcule automatiquement la taille de police selon le nombre de colonnes ou lignes (empirique)
+autoGparFontSizeMatrix<-function(n,...){ #Calcule automatiquement la taille de police selon le nombre de colonnes ou lignes (empirique)
 	n=max(n,50)
 	n=min(n,1000)
-	return(gpar(fontsize=1/n*600))
+	return(gpar(fontsize=1/n*600,...))
 }
 
 ConvertKey<-function(keyList, tabKey,colOldKey=1,colNewKey=2){
@@ -350,8 +349,20 @@ convertColorAdd2Sub<-function(red,green,blue){
 	return(data.frame("red"=newRed,"green"=newGreen,"blue"=newBlue))
 }
 
+#apply a function that take 2 argument on a vactor of n element, recursively
 recursiveFun<-function(argList,fun){
   if(len(argList)==2) return(fun(argList[1][[1]],argList[2][[1]]))
   return(fun(argList[1][[1]],recursiveFun(argList[-1],fun)))
+}
+
+#create empty dataframe
+emptyDF<-function(row.names,col.names,defaultValue=NA){
+	tempMat<-matrix(data = defaultValue,nrow=length(row.names),ncol = length(col.names),dimnames = list(row.names,col.names))
+	data.frame(tempMat)
+}
+
+#copy paste ready vector
+copyReadyVector<-function(x){
+	paste0("c('",paste0(x,collapse = "','"),"')")
 }
 
