@@ -455,6 +455,7 @@ getSpeciesData<-function(sample.species="Human",genes,updateSpeciesPackage=FALSE
 	if(updateSpeciesPackage) biocLite(species$package)
 	library(species$package,character.only = TRUE)
 	species$GeneIdTable<-select(get(species$package),genes, "ENTREZID","SYMBOL")
+	species$species<-sample.species
 	return(species)
 }
 
@@ -626,6 +627,8 @@ getDBterms<-function(geneSym,geneEntrez=NULL, corrIdGenes=NULL, speciesData=NULL
 	if(is.null(customAnnot) & "custom"%in%database) stop("You must give a value a list in customAnnot if database=custom")
 	if(is.null(speciesData)){
 		speciesData<-getSpeciesData(species,geneSym)
+	}else{
+		species<-speciesData$species
 	}
 	if(is.null(corrIdGenes)) corrIdGenes<-speciesData$GeneIdTable
 	options(warn=-1)
@@ -681,6 +684,7 @@ exportEnrich<-function(enrichResults,file,quote = FALSE,sep = "\t",col.names = T
 	write.table(enrichResults,file,quote = quote,sep = sep,col.names = col.names,row.names = row.names,...)
 }
 
+
 calConsensusRanking<-function(genes,pvalues,logFoldChanges){
 	pvalues <- 1-pvalues; abslogFoldChanges<-abs(logFoldChanges)
 	dataRank<-data.frame(pval=pvalues,LFC=abslogFoldChanges,row.names=genes)
@@ -691,7 +695,7 @@ calConsensusRanking<-function(genes,pvalues,logFoldChanges){
 
 ###ViewKEGG####
 #x : 
-viewKEGG<-function(x,pathway,corrIdGenes=NULL,species="Human"){	
+viewKEGG<-function(x,pathway,corrIdGenes=NULL,species="Human",directory=getwd(),...){	
 	if(is.data.frame(x) | is.matrix(x)){
 		tempx<-x
 		x<-tempx[,1]
@@ -700,9 +704,14 @@ viewKEGG<-function(x,pathway,corrIdGenes=NULL,species="Human"){
 	if(is.null(corrIdGenes)) corrIdGenes<-getSpeciesData(species,names(x))$GeneIdTable
 	entrezId<-corrIdGenes[corrIdGenes$SYMBOL%in%names(x),"ENTREZID"];
 	notNA<-which(!is.na(entrezId))
-	dat<-x[notNA];
-	names(dat)<-entrezId[notNA]
-	pathview(gene.data = dat, pathway.id = pathway, species = "hsa",kegg.native=TRUE,low="blue",mid="white",high="red",na.col="black")
+	if(length(notNA)>0){
+		dat<-x[notNA];
+		names(dat)<-entrezId[notNA]
+		pathview(gene.data = dat, pathway.id = pathway, species = "hsa",kegg.native=TRUE,
+			low="blue",mid="white",high="red",na.col="black",kegg.dir=directory,...)
+	}else{
+		warning("no entrez id were found")
+	}
 }
 
 ####Convert 2 Entrez
@@ -817,7 +826,7 @@ heatmap.DM<-function(matrix,clustering_distance_rows=corrDist,clustering_distanc
 		args$cluster_columns<-cluster_columns
 	}
 	matrix<-as.matrix(matrix)
-	if(min(apply(matrix,2,sd))==0){
+	if(min(apply(matrix,1,sd))==0){
 		warning("some row have a 0 sd. sd-based method (correlation distance, scaling) will be desactivated or switched.")
 		scale=FALSE
 		if(identical(corrDist,clustering_distance_rows)){
@@ -845,4 +854,8 @@ heatmap.DM<-function(matrix,clustering_distance_rows=corrDist,clustering_distanc
 	}else{
 		print(ht)
 	}
+}
+
+calLFC<-function(matrix,groupvector){
+	
 }
