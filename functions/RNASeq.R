@@ -685,12 +685,18 @@ exportEnrich<-function(enrichResults,file,quote = FALSE,sep = "\t",col.names = T
 }
 
 
-calConsensusRanking<-function(genes,pvalues,logFoldChanges){
+calConsensusRankingOld<-function(genes,pvalues,logFoldChanges){
 	pvalues <- 1-pvalues; abslogFoldChanges<-abs(logFoldChanges)
 	dataRank<-data.frame(pval=pvalues,LFC=abslogFoldChanges,row.names=genes)
 	rankRes<-apply(dataRank,1,gmean)
 	rankRes[logFoldChanges<0]<- -rankRes[logFoldChanges<0]
 	rankRes
+}
+
+calConsensusRanking<-function(genes,pvalues,logFoldChanges){
+	InvPvalues <- 1-pvalues;
+	InvPvalues[logFoldChanges<0]<- -InvPvalues[logFoldChanges<0]
+	InvPvalues
 }
 
 ###ViewKEGG####
