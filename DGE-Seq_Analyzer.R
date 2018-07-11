@@ -447,7 +447,7 @@ enrichDBs<-getDBterms(rn(exprW), speciesData=species.data,database=c("kegg","rea
 
 for(comp in compsDE){
   logFC[[comp]] = res[[comp]]$log2FoldChange;names(logFC[[comp]])<-rn(res[[comp]])
-  scoreEnrich[[comp]]<-calConsensusRanking(rn(res[[comp]]),logFC[[comp]],res[[comp]]$pvalue)
+  scoreEnrich[[comp]]<-calConsensusRanking(rn(res[[comp]]),res[[comp]]$pvalue,logFC[[comp]])
   enrichRes[[comp]]<-Enrich(scoreEnrich[[comp]],corrIdGenes = species.data$GeneIdTable,
     returnLeadingEdge = TRUE,db_terms = enrichDBs)
   exportEnrich(enrichRes[[comp]],paste0("results/Enrich_",comp,".tsv"))

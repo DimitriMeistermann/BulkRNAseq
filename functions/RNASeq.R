@@ -696,6 +696,7 @@ calConsensusRankingOld<-function(genes,pvalues,logFoldChanges){
 calConsensusRanking<-function(genes,pvalues,logFoldChanges){
 	InvPvalues <- 1-pvalues;
 	InvPvalues[logFoldChanges<0]<- -InvPvalues[logFoldChanges<0]
+	names(InvPvalues)<-genes
 	InvPvalues
 }
 
