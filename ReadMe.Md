@@ -1,5 +1,5 @@
 ﻿
-Bulk RNA-seq pipeline v2.3
+Bulk RNA-seq pipeline v3.1
 ---------------------------------
 # Installation and launch:
 1. Put all pipeline files in a new directory
