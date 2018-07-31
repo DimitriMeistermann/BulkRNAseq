@@ -678,12 +678,10 @@ getDBterms<-function(geneSym,geneEntrez=NULL, corrIdGenes=NULL, speciesData=NULL
 	}
 }
 
-exportEnrich<-function(enrichResults,file,quote = FALSE,sep = "\t",col.names = TRUE,row.names = FALSE,geneCol="leadingEdge",...){
-	enrichResults$Gene<-sapply(enrichResults[[geneCol]],function(x){ return(paste0(x,collapse=sep))})
-	enrichResults[[geneCol]]<-NULL
-	write.table(enrichResults,file,quote = quote,sep = sep,col.names = col.names,row.names = row.names,...)
+exportEnrich<-function(enrichResults,file,quote = FALSE,sep ="\t",col.names = TRUE,row.names = FALSE,geneCol="leadingEdge",...){
+  enrichResults[[geneCol]]<-sapply(enrichResults[[geneCol]],function(x) paste0(x,collapse=sep))
+  write.table(enrichResults,file,quote = quote,sep = sep,col.names = col.names,row.names = row.names,...)
 }
-
 
 calConsensusRankingOld<-function(genes,pvalues,logFoldChanges){
 	pvalues <- 1-pvalues; abslogFoldChanges<-abs(logFoldChanges)
