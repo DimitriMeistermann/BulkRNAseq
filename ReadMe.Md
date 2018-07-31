@@ -1,22 +1,21 @@
-﻿#############################
-# Bulk RNA-seq pipeline v2.3#
-#############################
+﻿
+Bulk RNA-seq pipeline v2.3
+---------------------------------
+# Installation and launch:
+1. Put all pipeline files in a new directory
+2. Put data file (expression table and sample annotation table) in the same format as examples (.tsv with header and row names) in the data directory.
+3. Run installDGE.R
+4. Change all necessary parameters in section #Config param#
+5. Run the script
 
-#Installation and launch:
-	1- Put all pipeline files in a new directory
-	2- Put data file (expression table and sample annotation table) in the same format as examples (.tsv with header and row names) in the data directory.
-	3- Run installDGE.R
-	4- Change all necessary parameters in section #Config param#
-	5- Run the script
+# Warning
+- Sample Names must not contain special character like '(/-', but can contain dot. Condition names must not contain '_' (underscore)
+- Do not open expression file with Excel: Excel converts some gene names into date.
+- Don't hesitate to remove abnormal sample (see figs/DistribCountPerSample.pdf and results/SamplesAbstract.tsv).
+- With fdrtool package, Q-value has a minumim of 1.09048e-14, that can explain the clumping effect on the 2nd page of Volcano plots.
+- For each condition you must have a minimum n of 2, otherwise you can run the script up to 'save.image("rsave/Step2.R.RData")'
 
-#Warning
-	-Sample Names must not contain special character like '(/-', but can contain dot. Condition names must not contain '_' (underscore)
-	-Do not open expression file with Excel: Excel converts some gene names into date.
-	-Don't hesitate to remove abnormal sample (see figs/DistribCountPerSample.pdf and results/SamplesAbstract.tsv).
-	-With fdrtool package, Q-value has a minumim of 1.09048e-14, that can explain the clumping effect on the 2nd page of Volcano plots.
-	-For each condition you must have a minimum n of 2, otherwise you can run the script up to 'save.image("rsave/Step2.R.RData")'
-
-#Session info
+# Session info
 	R version 3.3.1 (2016-06-21)
 	Platform: x86_64-w64-mingw32/x64 (64-bit)
 	Running under: Windows >= 8 x64 (build 9200)
@@ -53,7 +52,7 @@
 	[67] tibble_1.2           KernSmooth_2.23-15   viridis_0.3.4        GetoptLong_0.1.5     locfit_1.5-9.1       data.table_1.10.4   
 	[73] Rgraphviz_2.18.0     digest_0.6.11        diptest_0.75-7       xtable_1.8-2         httpuv_1.3.3         munsell_0.4.3       
 
-#Credit and thanks
+# Credit and thanks
 	Pipeline writen by Dimitri Meistermann, University of Nantes, PHD student in computational biology
 	at CRTI (UMR 1064) and LS2N (UMR 6241).
 	mail: dimitri.meistermann@univ-nantes.fr
