@@ -245,13 +245,13 @@ FDR.res<-list()
 for(comp in comps){
   DE[[comp]]<-data.frame(res[[comp]])
   rownames(DE[[comp]])<-genes
-  FDR.res[[comp]]<-fdrtool(res[[comp]]$pvalue[which(!is.na(res[[comp]]$pvalue))], statistic= "normal", plot = F)
+  FDR.res[[comp]]<-fdrtool(res[[comp]]$pvalue[which(!is.na(res[[comp]]$pvalue))], statistic= "pvalue", plot = F)
   for(item in c("pval","qval","lfdr")){
     stat<-FDR.res[[comp]][[item]]
     FDR.res[[comp]][[item]]<-rep(NA,length(genes))
     FDR.res[[comp]][[item]][which(!is.na(res[[comp]]$pvalue))]<-stat
   }
-  DE[[comp]]$localFDR<-FDR.res[[comp]]$qval
+  DE[[comp]]$localFDR<-FDR.res[[comp]]$lfdr
 }
 
 #sample/group correspondence 
