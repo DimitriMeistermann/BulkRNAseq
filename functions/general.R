@@ -166,9 +166,9 @@ aggregRows<-function(dataframe,vector,fun=mean){
   rownames(res)<-lvl
   for(i in lvl){
 	if(length(which(vector==i))>1){
-		res[i,]<-apply(dataframe[which(vector==i),],2,fun)
+		res[i,]<-apply(dataframe[which(vector==i),,drop=FALSE],2,fun)
 	}else if(length(which(vector==i))==1){
-		res[i,]<-unlist(dataframe[which(vector==i),])
+		res[i,]<-unlist(dataframe[which(vector==i),,drop=FALSE])
 	}
   }
   return(res)
@@ -366,3 +366,9 @@ copyReadyVector<-function(x){
 	paste0("c('",paste0(x,collapse = "','"),"')")
 }
 
+#Better make.unique
+make.unique2<-function(sample.name,sep="."){
+	counts=table(as.factor(sample.name))
+	nmRep<-sapply(as.list(counts),function(x) 1:x)
+	paste0(rep(names(nmRep),counts),sep,as.character(unlist(nmRep,use.names = F)))[order(sample.name)[order(sample.name)]]
+}

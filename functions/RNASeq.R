@@ -2,7 +2,7 @@
 
 #need general.R
 
-filterMostExprimedGenesBySample <-function(data, numberOfGenes=nrow(data),minFreqOfGene=1,maxFreqOfGene=ncol(data),threshold=min(data)){
+filterMostExpressedGenesBySample <-function(data, numberOfGenes=nrow(data),minFreqOfGene=1,maxFreqOfGene=ncol(data),threshold=min(data)){
 	#Fonction de filtrage des counts, on prend les x gènes les plus exprimés pour chache échantillon puis on effectue une jointure complète
 	#puis on filtre selon la fréquence du gène
 	#data: dataframe des counts
@@ -10,18 +10,18 @@ filterMostExprimedGenesBySample <-function(data, numberOfGenes=nrow(data),minFre
 	#minFreqOfGene : nombre de fois minimum où le gène revient dans la liste des x gènes les plus exprimés (où le gène > threshold)
     #maxFreqOfGene : nombre de fois maximale où le gène est exprimé
 	#threshold: l'expression du gène doit être plus grande que ce paramètre pour que la fréquence soit comptée comme 1
-	mostExprimedGenes<-list()
+	mostExpressedGenes<-list()
 	for(i in 1:ncol(data)){
 		col<- data[,i]
 		names(col)<-rownames(data)
 		col<-col[which(col>threshold)];
-		mostExprimedGenes[[i]]<-names(sort(col,decreasing = T))[1:min(numberOfGenes,length(col))]
+		mostExpressedGenes[[i]]<-names(sort(col,decreasing = T))[1:min(numberOfGenes,length(col))]
 	}
 	rm(col)
 
-	freqTable<-summary(as.factor(unlist(mostExprimedGenes)),maxsum=nrow(data))
-	mostExprimedgenesVector<-names(freqTable[which(freqTable>=minFreqOfGene & freqTable<=maxFreqOfGene)])
-	return(data[mostExprimedgenesVector,])
+	freqTable<-summary(as.factor(unlist(mostExpressedGenes)),maxsum=nrow(data))
+	mostExpressedgenesVector<-names(freqTable[which(freqTable>=minFreqOfGene & freqTable<=maxFreqOfGene)])
+	return(data[mostExpressedgenesVector,])
 }
 
 vectSup0<-function(x){
@@ -35,24 +35,24 @@ nbGeneSup0<-function(data){
 	return(length(i[which(i>0)]))
 }
 
-filterMostExprimedGenesBySampleThres <-function(data, numberOfGenes=3000,maxGenes=nrow(data)/2){
+filterMostExpressedGenesBySampleThres <-function(data, numberOfGenes=3000,maxGenes=nrow(data)/2){
 	#Fonction de filtrage des counts, on prend les x gènes les plus exprimés pour chache échantillon puis on effectue une jointure complète
 	#puis on filtre selon la fréquence du gène
 	#data: dataframe des counts
 	#numberOfGenes: cutoff des gènes, plus il est élevé moins le filtre est stringeant
 	#maxGenes : nombre maximal de gène que l'on veut en sortie
-	mostExprimedGenes<-data.frame(matrix(ncol = ncol(data), nrow=numberOfGenes)) #création d'un dataframe vide
+	mostExpressedGenes<-data.frame(matrix(ncol = ncol(data), nrow=numberOfGenes)) #création d'un dataframe vide
 	for(i in 1:ncol(data)){
 	col<- data[,i]
 	names(col)<-rownames(data)
-	mostExprimedGenes[,i]<-names(sort(col,decreasing = T,method="shell"))[1:numberOfGenes]
+	mostExpressedGenes[,i]<-names(sort(col,decreasing = T,method="shell"))[1:numberOfGenes]
 	}
 	rm(col)
-	colnames(mostExprimedGenes)<-colnames(data)
-	freqTable<-sort(summary(as.factor(unlist(mostExprimedGenes)),maxsum=nrow(data)),decreasing=TRUE,method="shell")
+	colnames(mostExpressedGenes)<-colnames(data)
+	freqTable<-sort(summary(as.factor(unlist(mostExpressedGenes)),maxsum=nrow(data)),decreasing=TRUE,method="shell")
 	maxGenes<-min(maxGenes,length(freqTable))
-	mostExprimedgenesVector<-names(freqTable[1:maxGenes])
-	return(data[mostExprimedgenesVector,])
+	mostExpressedgenesVector<-names(freqTable[1:maxGenes])
+	return(data[mostExpressedgenesVector,])
 }
 
 interceptDistThres<-function(data,threshold=nrow(data)/3){
@@ -142,19 +142,19 @@ compareVectReplace<-function(data,verbose=FALSE){
 genesRankVSExpr<-function(data, numberOfGenes=nrow(data)){
 	#Stats par gènes
 	nsamples<-ncol(data)
-	mostExprimedGenes<-data.frame(matrix(ncol = nsamples, nrow=numberOfGenes));
+	mostExpressedGenes<-data.frame(matrix(ncol = nsamples, nrow=numberOfGenes));
 	for(i in 1:nsamples){
 		col<- data[,i];
 		names(col)<-rownames(data);
-		mostExprimedGenes[,i]<-names(sort(col,decreasing = T))[1:numberOfGenes];
+		mostExpressedGenes[,i]<-names(sort(col,decreasing = T))[1:numberOfGenes];
 	}
-	colnames(mostExprimedGenes)<-colnames(data);
+	colnames(mostExpressedGenes)<-colnames(data);
 	ranks<-data.frame(matrix(ncol = nsamples, nrow=numberOfGenes));
-	rownames(ranks)<-mostExprimedGenes[,1]
+	rownames(ranks)<-mostExpressedGenes[,1]
 	colnames(ranks)<-colnames(data);
 	for(i in 1:nsamples){
 		col<-1:numberOfGenes;
-		names(col)<-mostExprimedGenes[,i];
+		names(col)<-mostExpressedGenes[,i];
 		ranks[,i]<-col[rownames(ranks)]
 	}
 	meanRank<-apply(ranks,1,mean)
@@ -678,10 +678,12 @@ getDBterms<-function(geneSym,geneEntrez=NULL, corrIdGenes=NULL, speciesData=NULL
 	}
 }
 
-exportEnrich<-function(enrichResults,file,quote = FALSE,sep ="\t",col.names = TRUE,row.names = FALSE,geneCol="leadingEdge",...){
-  enrichResults[[geneCol]]<-sapply(enrichResults[[geneCol]],function(x) paste0(x,collapse=sep))
-  write.table(enrichResults,file,quote = quote,sep = sep,col.names = col.names,row.names = row.names,...)
+exportEnrich<-function(enrichResults,file,quote = FALSE,sep = "\t",col.names = TRUE,row.names = FALSE,geneCol="leadingEdge",...){
+	enrichResults$Gene<-sapply(enrichResults[[geneCol]],function(x){ return(paste0(x,collapse=sep))})
+	enrichResults[[geneCol]]<-NULL
+	write.table(enrichResults,file,quote = quote,sep = sep,col.names = col.names,row.names = row.names,...)
 }
+
 
 calConsensusRankingOld<-function(genes,pvalues,logFoldChanges){
 	pvalues <- 1-pvalues; abslogFoldChanges<-abs(logFoldChanges)
@@ -700,19 +702,20 @@ calConsensusRanking<-function(genes,pvalues,logFoldChanges){
 
 ###ViewKEGG####
 #x : 
-viewKEGG<-function(x,pathway,corrIdGenes=NULL,species="Human",directory=getwd(),...){	
+viewKEGG<-function(x,pathway,corrIdGenes=NULL,species="Human",speciesData=NULL,directory=getwd(),...){	
 	if(is.data.frame(x) | is.matrix(x)){
 		tempx<-x
 		x<-tempx[,1]
 		names(x)<-rownames(tempx)
 	}
-	if(is.null(corrIdGenes)) corrIdGenes<-getSpeciesData(species,names(x))$GeneIdTable
+	if(is.null(speciesData)) speciesData<-getSpeciesData(species,names(x))
+	if(is.null(corrIdGenes)) corrIdGenes<-speciesData$GeneIdTable
 	entrezId<-corrIdGenes[corrIdGenes$SYMBOL%in%names(x),"ENTREZID"];
 	notNA<-which(!is.na(entrezId))
 	if(length(notNA)>0){
 		dat<-x[notNA];
 		names(dat)<-entrezId[notNA]
-		pathview(gene.data = dat, pathway.id = pathway, species = "hsa",kegg.native=TRUE,
+		pathview(gene.data = dat, pathway.id = pathway, species = speciesData$kegg,kegg.native=TRUE,
 			low="blue",mid="white",high="red",na.col="black",kegg.dir=directory,...)
 	}else{
 		warning("no entrez id were found")
@@ -729,7 +732,27 @@ Sym2Entrez<-function(x, corrIdGenes=NULL,species="Human"){
 	return(ConvertKey(x,tabKey = corrIdGenes,colOldKey = "SYMBOL",colNewKey = "ENTREZID"))
 }
 	
+distPathway<-function(db_pathway){
+	genesInPathway<-sort(unique(unlist(db_pathway,recursive = TRUE)))
+	pathDF<-data.frame(matrix(FALSE,ncol = length(db_pathway),nrow = length(genesInPathway),dimnames = list(genesInPathway,names(db_pathway))))
+	for(i in 1:length(db_pathway)){
+		pathDF[db_pathway[[i]],i]<-TRUE
+	}
 
+	combPath<-combn(1:ncol(pathDF),2)
+	distMat<-matrix(data=0,nrow=ncol(pathDF),ncol=ncol(pathDF),dimnames=list(cn(pathDF),cn(pathDF)))
+	for(comp in 1:ncol(combPath)){
+		i<-combPath[1,comp]
+		j<-combPath[2,comp]
+		lenInter<-length(which(pathDF[,i] & pathDF[,j]))
+		leni<-length(which(pathDF[,i]))
+		lenj<-length(which(pathDF[,j]))
+		distMat[i,j]<-1-(lenInter/min(leni,lenj))
+		distMat[j,i]<-distMat[i,j]
+	}
+	as.dist(distMat,upper=T)
+}	
+	
 ###Fonction pour retrouver les branch "Heatmap branch" de monocle
 retrieveBranch<-function(cds,branch_point){
   require(monocle)
@@ -861,6 +884,29 @@ heatmap.DM<-function(matrix,clustering_distance_rows=corrDist,clustering_distanc
 	}
 }
 
-calLFC<-function(matrix,groupvector){
-	
+normDeseq<-function(expr){
+	PE<-apply(expr,1,gmean,keepZero=T)
+	PE<-PE[PE>0]
+	genes<-names(PE)
+	ratioMat<-sweep(expr[genes,],1,PE,"/")
+	normFactors<-apply(ratioMat,2,median)
+	sweep(expr,2,normFactors,"/")
+}
+
+testLinearModel<-function(exprData,sampleData,contrast){
+	samples<-rn(sampleData)[sampleData[,contrast[1]]%in%contrast[2:3]]
+	data<-exprData[,samples]
+	groups<-droplevels(sampleData[samples,contrast[1]])
+	logicGroup<-rep(F,len(groups))
+	logicGroup[groups==contrast[2]]<-T
+	regTabList<-apply(data,1,function(x){
+		data.frame(data=x,group=logicGroup)
+	})
+	resList<-lapply(regTabList,function(regTab){
+		summary(lm(data ~ group,data=regTab))$coefficients[2,c(1,4)]
+	})
+	res<-data.frame(do.call("rbind",resList));colnames(res)<-c("Log2FoldChange","Pval")
+	res<-cbind(data.frame(baseMean=apply(exprData[,samples],1,mean)),res)
+	res$adjPval<-p.adjust(res$Pval,method = "BH")
+	return(res)
 }

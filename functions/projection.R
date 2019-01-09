@@ -225,6 +225,7 @@ NMDS<-function(data,transpose=TRUE,scale=FALSE,center=FALSE,metric=dist,ndim=2,m
 }
 proj2d<-function(coord, axis=1:2,group=NULL, pointSize=3, plotText=FALSE,main=NULL,alpha=9/10, 
 ellipse=FALSE,emph=NULL,colorScale=NULL,returnGraph=FALSE,legendTitle="Values",axis.names=NULL,na.color="grey50",na.bg=TRUE,obj=NULL){
+	coord<-data.frame(coord)
 	if(!(is.factor(group)|is.numeric(group)|is.null(group))) stop("Error, group must be numerical, factor or null.")
 	if(is.null(coord)) coord<-obj$coord
 	if(!require("ggplot2")) stop("You must install ggplot2");
@@ -526,6 +527,16 @@ rotate<-function(coord,angle,center=c(0,0)){
   transY<-center[2]-centerRot[2]
   return(cbind(xP+transX,yP+transY))
 }
+
+rotateSubspace<-function(coord,angle,center=c(0,0),which.sample=rownames(coord)){
+	row_names<-rownames(coord)
+	coord2Rotate<-coord[which.sample,]
+	coordNotRotated<-coord[!row_names%in%which.sample ,]
+	rotatedCoord<-rotate(coord2Rotate,angle,center=center)
+	newCoord<-rbind(rotatedCoord,coordNotRotated)
+	newCoord[row_names,]
+}
+
 
 
 rotate3dim<-function(coord,angle,center=c(0,0,0),axes=c(1,2)){
