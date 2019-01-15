@@ -545,8 +545,8 @@ Enrich<-function(x, corrIdGenes=NULL,database=c("reactom","goBP"),maxSize=500,mi
 	for(db in names(db_terms)){
 		res[[db]]<-fgsea(db_terms[[db]], new_x,nperm=nperm,minSize=minSize,maxSize=maxSize,...)
 		res[[db]]<-res[[db]][order(res[[db]]$NES),]
-		res[[db]]$leadingEdge<- if(returnLeadingEdge) sapply(res[[db]]$leadingEdge,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL") else NULL
 		res[[db]]$database<-db
+		res[[db]]$leadingEdge<- if(returnLeadingEdge) sapply(res[[db]]$leadingEdge,ConvertKey,tabKey=corrIdGenes,colOldKey = "ENTREZID",colNewKey = "SYMBOL") else NULL
 	}
 	res<-do.call("rbind", res)
 	return(res)
@@ -703,6 +703,7 @@ calConsensusRanking<-function(genes,pvalues,logFoldChanges){
 ###ViewKEGG####
 #x : 
 viewKEGG<-function(x,pathway,corrIdGenes=NULL,species="Human",speciesData=NULL,directory=getwd(),...){	
+	require(pathview)
 	if(is.data.frame(x) | is.matrix(x)){
 		tempx<-x
 		x<-tempx[,1]
