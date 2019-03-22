@@ -33,7 +33,7 @@ setwd("~/PHDwork/Scripts/DGE-Seq_Analyzer/") #Put your Working Directory
 RequiredfunctionsDir<-"~/PHDwork/functions/" #functions used by script path
 expressionData<-"data/exprDat.tsv" #expression file path
 sampleTable<-"data/sampleAnnot.tsv" #sample sheet path
-condCol<-"Milieu" #name of condition column in sample table for DE genes
+condCol<-"culture_media" #name of condition column in sample table for DE genes
 batchCol<-"Run" #Name of batch column in sample table for batch correction, 'NULL' if no batch
 
 #advanced parameters
