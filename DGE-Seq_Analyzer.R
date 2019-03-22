@@ -34,7 +34,7 @@ RequiredfunctionsDir<-"~/PHDwork/functions/" #functions used by script path
 expressionData<-"data/exprDat.tsv" #expression file path
 sampleTable<-"data/sampleAnnot.tsv" #sample sheet path
 condCol<-"culture_media" #name of condition column in sample table for DE genes
-batchCol<-"Run" #Name of batch column in sample table for batch correction, 'NULL' if no batch
+batchCol<-"run" #Name of batch column in sample table for batch correction, 'NULL' if no batch
 
 #advanced parameters
 sample.species<-"Human" #data(bods); print(bods) #to see available species
@@ -79,7 +79,7 @@ sampleAnnot<-sampleAnnot[sample2keep,]
 exprDat<-exprDat[,rn(sampleAnnot)]
 
 batch<-TRUE; if(is.null(batchCol)) batch<-FALSE
-exprDat<-filterMostExprimedGenesBySample(exprDat) # Gene filtering
+exprDat<-filterMostExpressedGenesBySample(exprDat) # Gene filtering
 sampleAnnot[,condCol]<-as.factor(as.character(sampleAnnot[,condCol]))
 
 formulaChar<-paste0("~",condCol)
