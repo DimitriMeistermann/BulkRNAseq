@@ -1,8 +1,6 @@
 #!/usr/bin/R
 
-library("Biobase")
-library("BiocGenerics")
-library("BiocInstaller")
+library(BiocManager)
 library(shiny)
 library(flashClust)
 library(DESeq2)
@@ -27,10 +25,10 @@ library(AnnotationDbi)
 library(reactome.db)
 library(ggrepel)
 
+
 #### Config param  #####
 #basic parameters (please verify carefully)
 setwd("~/PHDwork/Scripts/DGE-Seq_Analyzer/") #Put your Working Directory
-RequiredfunctionsDir<-"~/PHDwork/functions/" #functions used by script path
 expressionData<-"data/exprDat.tsv" #expression file path
 sampleTable<-"data/sampleAnnot.tsv" #sample sheet path
 condCol<-"culture_media" #name of condition column in sample table for DE genes
@@ -54,15 +52,14 @@ GenesInFig<-100 #here tape a number of genes that will correspond to top DE gene
 PathwayInFig<-10 #Number of max pathway heatmap by comparison
 
 #####LOADING DATA#####
-#Importation des fonctions maison
-source(paste0(RequiredfunctionsDir,"/general.R"))
-source(paste0(RequiredfunctionsDir,"/projection.R"))
-source(paste0(RequiredfunctionsDir,"/RNASeq.R"))
-#Create dirs
+#Importing home made functions
+source("https://gitlab.univ-nantes.fr/E114424Z/veneR/raw/master/loadFun.R?inline=false")
+
+#Creating dirs
 dir.create("results",showWarnings=F)
 dir.create("figs",showWarnings=F)
 dir.create("rsave",showWarnings=F)
-#Load files
+#Loading files
 exprDat<-lire(expressionData)
 sampleAnnot<-lire(sampleTable)
 #Species preparation
@@ -197,7 +194,7 @@ for(col in cn(annot)){
   i<-i+1
   if(i==4) i<-1
 }
-ha<-HeatmapAnnotation(annot,col = colTopAnnot)
+ha<-HeatmapAnnotation(df=annot,col = colTopAnnot)
 Ht<-Heatmap(matrix = corSample, cluster_rows = clustSamples, cluster_columns = clustSamples, top_annotation = ha, 
             name="Pearson\ncorrelation",row_names_gp = autoGparFontSizeMatrix(ncol(corSample)),
             column_names_gp = autoGparFontSizeMatrix(ncol(corSample)),
@@ -371,7 +368,7 @@ for (comp in compsDE){
       i<-i+1
       if(i==4) i<-1
     }
-    haByComp[[comp]]<-HeatmapAnnotation(tempAnnot,col = colTopAnnotTemp)
+    haByComp[[comp]]<-HeatmapAnnotation(df=tempAnnot,col = colTopAnnotTemp)
   }else{
     haByComp[[comp]]<-ha
   }
@@ -483,7 +480,7 @@ for(comp in compWtPathway){
   setwd(paste0("figs/enrich/pathview_",comp))
   keggPathway<-unlist(enrichRes[[comp]][enrichRes[[comp]]$database=="kegg","pathway"])
   for(pathway in keggPathway){
-    viewKEGG(logFC[[comp]],strsplit(pathway),corrIdGenes = species.data$GeneIdTable)
+    viewKEGG(logFC[[comp]],pathway,speciesData=species.data)
   }
   setwd("../../..")
 }
