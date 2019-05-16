@@ -483,7 +483,7 @@ for(comp in compWtPathway){
   setwd(paste0("figs/enrich/pathview_",comp))
   keggPathway<-unlist(enrichRes[[comp]][enrichRes[[comp]]$database=="kegg","pathway"])
   for(pathway in keggPathway){
-    viewKEGG(logFC[[comp]],pathway,corrIdGenes = species.data$GeneIdTable)
+    viewKEGG(logFC[[comp]],strsplit(pathway),corrIdGenes = species.data$GeneIdTable)
   }
   setwd("../../..")
 }
