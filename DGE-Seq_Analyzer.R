@@ -381,7 +381,7 @@ hclustGeneDE<-list()
 hclustSampleDE<-list()
 for (comp in compsDE){
   bootTemp<-bootstrap; if(nrow(exprDE.scaled[[comp]])>10) bootTemp<-FALSE
-  hclustGeneDE[[comp]]<-unsupervisedClustering(exprDE.scaled[[comp]],transpose = F,nboot=nboot,bootstrap = bootTemp)
+  hclustGeneDE[[comp]]<-unsupervisedClustering(exprDE.scaled[[comp]],transpose = F,nboot=nboot,bootstrap = bootTemp,method.dist="pearson")
   hclustSampleDE[[comp]]<-unsupervisedClustering(exprDE.scaled[[comp]],transpose = T,nboot=nboot,bootstrap = bootTemp,method.dist = "euclidean")
 }
 
