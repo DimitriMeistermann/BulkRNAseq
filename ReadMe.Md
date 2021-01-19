@@ -79,41 +79,60 @@ A tutorial to use an interface very close to the web app is available [here](htt
 # Inputs and outputs of the script
 
  📂**data** Contains the inputs given by the user.
+
  ┣ 📜**colorScales.json** 
  Example of file to give for custom color scales in figures. If this file is not given, or if some variable are not mapped to colors, remaining color scales that are necessary for the script will be automatically computed.
+
  ┣ 📜**ComparisonToDo.tsv** 
 Example file to give if you want to make specific comparisons between your groups of samples, if this file is not given, all possible comparisons will be done. 
+
  ┣ 📜**msigdb.v7.2.symbols.gmt** Example of custom gene set database for enrichment.
+
  ┣ 📜**rawCounts.tsv** Raw counts table of gene expression.
+
  ┗ 📜**sampleAnnot.tsv** 
  Sample annotations (data for each sample that are not gene expression).
+
  📂**figs** Output figures.
+
  ┣ 📜**QualityControlOfSamples.pdf**
  Number of expressed genes (at least one count) for each sample in function of number of counts. Samples below the red lines are excluded from the analysis. You should adjust the parameter of the script by examining this figure (for example, discard isolated samples).
+
  ┣ 📜**QualityControlOfGenes.pdf**
  Close to the overdispersion plot but before the normalization of data. You can adjust the threshold to eliminate gene that are close tobe not expressed at all, and hence, have aberrant dispersion.
+
  ┣ 📜**BatchEffectCorrectionControl.pdf** 
  Control of the effect of batch correction (if necessary). This figure contains a PCA before and after batch correction, with the first variable of the experimental design and the variable of batch projected on them.
+
  ┣ 📜**HeatmapCorPearson.pdf** 
  Square heatmap of the sample to sample Pearson correlation. If there is a step of batch correction, the second page is the heatmap before the batch correction.
  ┣ 📜**markersOfUnsupervisedClusters.pdf** 
  Heatmap of best markers of unsupervised sample clusters. The number of markers represented in each cluster is controlled by the parameter *topGeneShown*.
+
  ┣ 📜**moduleActivationScore.pdf** 
  Heatmap from activation score of each unsupervised gene cluster (gene module) in each sample.
+
  ┣ 📜**overDispersionPlot.pdf** 
  Dispersion in function of average expression for each gene. A regression is fitted and represent the theoretical dispersion for a given mean. A gene above this curve is *overdispersed* and is likely to be differentially expressed as his dispersion can not be explained only by technical and biological variations between samples from the same populations. Genes that are under the curves are *underdispersed*, and could be for instance be a good candidate as a housekeeping gene for a PCR.
+
  ┣ 📜**PrincipalComponentAnalysis.pdf**
  PCA main figure. Percentage of variance of data explained for each principal component, then for the first combination of two PCs: projection of samples colored by variable from sample annotations, correlation circle (contribution of genes to the PCs, or gene eigenvalues).
+
  ┣ 📜**PrincipalComponantRegression.pdf**
 The PCR regression of PCs from the PCA on given features (here variable from sample annotations). The given R squared is representing the link between the PC and the variable.
+
  ┣ 📜**superHeatmap.pdf**
  Heatmap of the whole transcriptome, spitted by gene modules and unsupervised sample clusters. Height of each row slice is log proportional to the number of genes in the gene module.
+
  ┣ 📜**UMAP.pdf**
  Non linear projection of samples in a 2D space by the UMAP method.
+
  ┗ 📜**upsetPlot.pdf**
  Summary of differential expression analyses. Each column can be seen as a Venn diagram, each row represent a comparison. The enrichment is the observed intersection size divided by the intersection size expected given the gene set size and the universe (the total number of gene).
+
  📂**resPerComparison** Outputs that are specific to each comparison.
  ┣ 📂 **\[comparison name]**
+
  ┃ ┣ 📜**DESeqResults.tsv** Results from DESeq2 with the following columns:
 - **baseMean**: Average expression of the gene.
 - **log2FoldChange**: Ratio of expression between sample groups (followed by a log2): $log2(downLevel/upLevel)$. *downLevel* refers to samples that belongs to the group where if a gene is more expressed, the gene is considered as downregulated. *upLevel* the group where a gene is more expressed is considered as upregulated. Example: between a Wild-type (*downLevel*) and a KO (*upLevel*) group of samples, when $log2FoldChange=0$ the gene have the same expression in both group. When $log2FoldChange=1$ the gene is two times more expressed in KO than in WT group, and when $log2FoldChange=-1$ the gene is two time more expressed in WT.
@@ -125,17 +144,26 @@ The PCR regression of PCs from the PCA on given features (here variable from sam
 - **isDE**: DOWNREG: gene is significant and more expressed in *downLevel* group, UPREG: gene is significant and more expressed in *upLevel* group, NONE: gene is not differentially expressed.
  ┃ ┣ 📜**heatmapDEgenes.pdf**
  Heatmap of differentially expressed genes. Samples from the comparison are separated from the rest.
- ┃ ┣ 📜**pvalHistogram.pdf** Distribution of p-values from DESEq2
+
+ ┃ ┣ 📜**pvalHistogram.pdf** Distribution of p-values from DESEq2.
+
  ┃ ┗ 📜**volcanoPlot.pdf**
  Adjusted p-values from DESeq2 in function of Log2FC with additional information on the comparison. Significance threshold are represented.
+
  ┃ ┣ 📜**MA-plot.pdf** Log2FC in function of average expression. Legend is the same than in the volcano plot. 
+
  ┃ ┣ 📜**focusOnTop10genes.pdf**
  Expression of the top ten genes, with a special y scale $log10(x+1)$
+
  ┃ ┣ 📜**GSDA_enrichment.tsv** Gene Set Differential Activation results.
+
  ┃ ┣ 📜**GSDA_heatmap.pdf**
  Heatmap of activation score for top significant gene sets. Contribution of most negative/positive genes are represented at the right. 
+
  ┃ ┣ 📜**GSDA_pvalHistogram.pdf** Distribution of p-values from GSDA.
+
  ┃ ┣ 📜**GSDA_Volcano.pdf** Volcano plot of GSDA, each dot is a gene set.
+
  ┃ ┣ 📜**GSEA_enrichment.tsv** Results from the GSEA enrichment, with these specific columns:
 - **pathway**: Name of the gene set. 
 - **ES, NES**: Enrichment and new enrichment score. If NES>0 genes from the gene set are high ranked (genes are globally upregulated in the gene set), if NES<0, genes are low ranked (genes are globally downregulated).
@@ -145,19 +173,29 @@ The PCR regression of PCs from the PCA on given features (here variable from sam
 
  ┃ ┣ 📜**GSEA_heatmapPerPathway.pdf**
  Expression heatmap fot top significant gene sets.
+
  ┃ ┣ 📜**GSEA_pvalHistogram.pdf**
  Distribution of p-values from GSEA.
+
  ┃ ┣ 📜**GSEA_volcano.pdf**
  Volcano plot of GSEA, each dot is a gene set. Log2FC is not applicable for GSEA and is replaced with NES.
+
  ┃ ┣ 📂**pathview** For each top significant KEGG pathway, schematic of the pathway.
+
  ┃ ┃ ┣ 📜 **\[pathway name].pathview.png** Projection of Log2FC on the KEGG schematic.
+
  ┃ ┃ ┣ 📜 **\[pathway name].png** KEGG schematic without projection of Log2FC.
+
  ┃ ┗ ┗ 📜 **\[pathway name].xml** Information on mapping between genes and KEGG schematic.
+
  📂**results** Output data in text formats.
+
  ┣ 📜**QualityControlOfGenes.tsv** Values of *QualityControlOfGenes.pdf*
+
  ┣ 📜**QualityControlOfSamples.tsv** Values of *QualityControlOfSamples.pdf*
 
  ┣ 📜**sampleAnnotations.tsv** Sample annotations in input with the adding of some statistics and attribution of unsupervised sample clusters.
+
  ┣ 📜**geneAnnotations.tsv**
  Statistics on each gene, with the following columns:
 - **mu**: average expression
@@ -171,34 +209,50 @@ The PCR regression of PCs from the PCA on given features (here variable from sam
 
  ┣ 📜**normCounts.tsv**
  Normalized counts table, each gene follows a negative binomial distribution. Useful for plotting expression and work with methods that handle negative binomial distribution.
+
  ┣ 📜**normCorrectedCounts.tsv**
   Normalized counts table but batch corrected.
+
  ┣ 📜**logCounts.tsv**
  Log normalized counts table, each gene follows approximatively a normal distribution. Useful for most of multivariate analyses. NB: To be more precise, these counts are not logged but a variance stabilization transformation (VST) has been applied. Result is closed but less biased than real log counts (usually $log2(expr+1)$ ).
+
  ┣ 📜**logCorrectedCounts.tsv**
 Log normalized counts table but batch corrected.
+
  ┣ 📜**countsPerMillion.tsv** 
 CPM: Raw count table adjusted by library size then multiplied by one million. If the technology of sequencing is UMI-based, then we can also talk about UPM (UMI Per Million) or TPM (Transcript Per Million). This count table is useful for representing gene expression, but should not be chosen for analysis purposes.
+
  ┣ 📜**contribGenesPCA.tsv** Eigengenes of PCA (values of correlation circles).
+
  ┣ 📜**markerAUCsPerSampleCluster.tsv**
  Aera Under ROC curve (AUROC) for each gene for each unsupervised sample cluster. A value of 0.5 means that the gene is not a marker, 1 that the gene is a perfect marker, and 0 a perfect negative marker (if it is expressed , we are sure to not be in the sample cluster).
+
  ┣ 📜**moduleActivationScore.tsv**
  Activation score for each sample for each gene module.
+
  ┣ 📜**moduleMembership.tsv**
 Membership for each gene for each module. It is computed by $cor(expressionOfGene,moduleActivationScore)$.
+
  ┣ 📜**geneSetActivations_\[geneset_database].tsv**
  Activation scores for the given gene set databases.
+
  ┣ 📜**geneSetsContributions_\[geneset_database].tsv**
  Contribution of gene of each gene set activation score.
+
  ┗ 📂**EnrichmentPerGeneModule**
  Enrichment for each gene module (hypergeometric test from a contingency table for each gene set).
+
  📂**rsave** Folder that contains R objects / R session images.
  ┗ **📜Step\[#].RData** 
  Each of these files contains a save of the R environment at given steps of the script. Useful if you want to resume the execution at a certain point of the analyses.
+
  📂**webApp** Directory that contains the web application.
+
  ┣ 📂**\[most of folders]** Code and data that are necessary to run the web app.
+
  ┣ 📂**prepare** 
  Contains files that are necessary to build the web application, but are no longer required to run it.
+
  ┗ 📜**index.html** 
  Main html page. This is the file to open with your browser to begin to use the web application.
 
@@ -210,7 +264,8 @@ Membership for each gene for each module. It is computed by $cor(expressionOfGen
 - For each condition you must have a minimum n of 2, otherwise you can run the script up to `save.image("rsave/Step2.RData")`. Bulk RNA-Seq analysis should be made with at least 6 biological replicates per group, more if the conditions are close in term of gene expression, or if the experimental design is complex.
 
 # Brief summary of the workflow
-##Step 1: loading data, building model and generation of counts tables
+
+## Step 1: loading data, building model and generation of counts tables
 - Loading homemade function from the repository veneR, NB: you can clone the repository locally if you want to use the script without an internet connection. Loading and verifying data given by the user, setting of the seed and creation of output folders.
 - Quality control of genes / samples.
 - Generation of color scales and the comparison matrix from the experimental design.
@@ -220,7 +275,7 @@ Membership for each gene for each module. It is computed by $cor(expressionOfGen
 - Batch correction
 - Computing of CPM
 
-##Step 2: Unsupervised and multivariate analyses
+## Step 2: Unsupervised and multivariate analyses
 - Computing of the overdispersion plot
 - Principal Component Analysis and Regression (and batch correction control if applicable).
 - Correlation heatmap
@@ -230,18 +285,18 @@ Membership for each gene for each module. It is computed by $cor(expressionOfGen
 - Computing AUROCS for each gene for each sample cluster.
 - Plotting the super heatmap.
 
-##Step 3: Differential gene expression analyses
+## Step 3: Differential gene expression analyses
 - For each comparison, computing of results and plot of DE analyses. By default these operations are multithreaded.
 - Plotting heatmaps of DE genes.
 - Upset plot
 
-##Step 4: Functional enrichment
+## Step 4: Functional enrichment
 - Downloading gene set databases
 - Gene Set Enrichment Analyses (GSEA).  Heatmap and use og pathview for significant pathways.
 - Gene Set Differential Activation (GSDA, experimental)
 - Enrichment of gene module with a simple enrichent method (from a contingency table for each gene set).
 
-##Step 5: Building of the web app
+## Step 5: Building of the web app
 
 [Link to my PhD manuscript](https://gitlab.univ-nantes.fr/E114424Z/tutodudaron/-/blob/master/th%C3%A8seV3.pdf) to go further (in French).
 
