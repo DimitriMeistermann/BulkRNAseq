@@ -3,7 +3,7 @@ Bulk RNA-Seq pipeline v4.0
 --------------------------
 
 # Installation and launch:
-1. Put all pipeline files in a new directory
+1. Download the script (for example: `git clone https://gitlab.univ-nantes.fr/E114424Z/BulkRNAseq.git`)
 2. Put data files (expression table and sample annotation table) in the same format as examples (.tsv with header and row names).
 	
 	**[optional]**: if you work behind a proxy you may have to change your *~/.Renviron* file. Example for University of Nantes :
@@ -15,10 +15,10 @@ Bulk RNA-Seq pipeline v4.0
 	**[optional]**: You can provide a "*comparison to do*" file and a "*color scales*" file. See the section *Inputs and outputs of the script* for more details.
 
 3. Run install.R
-4. Change all necessary parameters in the *Configuration of parameters* section of the script *BulkRNAseq.R*.
+4. Change all necessary parameters in the *Configuration of parameters* section in the script *BulkRNAseq.R*.
 5. Run the script *BulkRNAseq.R*.
 
-If you want to resume the script after an interruption, run line #1 to the last line before the section *Configuration of parameters*, and then load the appropriate environment in the *rsave* folder (in RStudio, go to file/open file).
+If you want to resume the script after an interruption, run line \#1 to the last line before the section *Configuration of parameters*, and then load the appropriate environment in the *rsave* folder (in RStudio, go to file/open file).
 
 # Tips for analyzing bulk RNA-Seq
 ## A word on experimental design
@@ -38,8 +38,8 @@ DESeq2 is theoretically compatible with quantitative variables, however a good w
 ## A word on batch correction
 Batch effects are technical bias between two or more group of samples. The most common case is when the sequencing was done on two different plates. It is important to think carefully about the experimental design to avoid case where batch effect correction is not precise, or even impossible.
 
-- Tips #1: try to split your group of samples between batches. If one group of sample is only in one batch the batch effect will be harder to retrieve.
-- Tips #2: try to put technical replicates between batches to control the quality of batch correction. If you have enough technical replicates you can even retrieve batch effect only from technical replicates, [example here](https://gitlab.univ-nantes.fr/E137833T/Castel_et_al_2020/-/blob/master/Code/1_bulk_rna_seq_preprocessing.R)
+- Tip 1: try to split your group of samples between batches. If one group of sample is only in one batch the batch effect will be harder to retrieve.
+- Tip 2: try to put technical replicates between batches to control the quality of batch correction. If you have enough technical replicates you can even retrieve batch effect only from technical replicates, [example here](https://gitlab.univ-nantes.fr/E137833T/Castel_et_al_2020/-/blob/master/Code/1_bulk_rna_seq_preprocessing.R)
 
 For enabling batch correction, you just have to set the argument *batchColumn* to the column name that contains batches attribution in sample annotations. If you want to disable it, set it to `NULL`.
 
