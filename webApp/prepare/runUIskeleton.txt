@@ -1,0 +1,135 @@
+//config
+var transLen = 1000;
+var squareDim=20;
+var padding =8;
+var fontSize = 15;
+var svgRatio=9/14;
+var xCoef=1;
+
+var mainAnnot = "<?mainAnnot?>";
+var tooltipBackgroundAnnot = "<?backGroundAnnot?>";
+var selectableAnnotation = "<?selectableAnnotation?>";
+
+var dataLoc="./";
+
+
+
+
+//declare
+var selectedInput;
+var cellPoint;
+var sampleAnnot;
+var xScale;
+var yScale;
+var SelAnnotList;
+var selectedSelAnnot=null;
+var chart;
+var WdivDistro;
+var HdivDistro;
+var curColorScale;
+var whichColorData;
+var geneList;
+var legendName="";
+var curData;
+var nodeSelAnnot;
+var nodeNotSelAnnot;
+var dataStats;
+var coordSave;
+var wViolinLegend;
+var hViolinLegend;
+var featureData;
+
+
+//select
+var svg = d3.select("#MainSVG").on("click",unselectSelAnnot).property("export","pseudoTimeProjection");
+var w = svg.node().getBoundingClientRect().width;
+var h=w*svgRatio;
+var radioDiv=d3.select("#radioDiv");
+var legendTitle=d3.select("#legendTitle");
+var legendSVG=d3.select("#legendSVG").property("export","legend");
+var SelAnnotContainer=d3.select("#SelAnnotContainer");
+var predifinedOrdinalColors;
+var gTraj=svg.append("g");
+var divDistro = d3.select("#chart-distro");
+var violinRow= d3.select("#violinRow");
+var colLegend=d3.select("#colLegend");
+var sliderContainer=d3.select("#sliderContainer");
+var SelAnnotSelect=d3.select("#SelAnnotSelect");
+var tooltip = d3.select("body").append("div")
+	.attr("class", "tooltipMain")				
+	.style("opacity", 0);
+var tipTable = tooltip.append("table");
+var quantScaleOnly = d3.selectAll(".quantScaleOnly");
+var exprOnly = d3.selectAll(".exprOnly");
+var tablegene=d3.select("#geneTabList")
+var geneTabListContainer=d3.select("#geneTabListContainer");
+var violinLegend=d3.select("#violinLegend");
+var headRightBottomContainer=d3.select("#headRightBottomContainer");
+var rightBottomContainer=d3.select("#rightBottomContainer");
+var geneClustlink=d3.select("#geneClustlink");
+
+
+
+//events
+var selColorAnnot=d3.select("#selColorAnnot").on("change",colorize);
+var buttonGene=d3.select("#searchGeneButton").on("click",colorize);
+var selectSampleCor=d3.select("#selectSampleCor").on("change",colorize);
+
+var radiusRange=d3.select("#radiusRange").on("input",changeRadiusWTanim);
+var exportBtn=d3.select("#exportToSVG").on("click",saveSvg);
+var violinSelect=d3.select("#violinSelect").on("change",changeViolin);
+
+d3.select("#dlTable").on("click",downloadGeneTable)
+d3.select("#SelAnnotUnselected").on("click",unselectSelAnnot);
+var selectgeneClust=d3.select("#selectgeneClust").on("change",colorize);
+
+var activeAccordion=function(){
+		return 1;
+}
+
+var MainAccordion=$( "#MainAccordion" ).accordion({
+	animate: 0,
+	active: +activeAccordion(),
+	activate: function( event, ui ) {
+		colorize() ;
+	}
+});
+
+$( "input[type='checkbox']" ).checkboxradio();
+
+var textGene=d3.select("#searchGeneText").on("keydown",function(){
+		if(d3.event.keyCode==13){
+			d3.select(".ui-autocomplete").style("display","none");
+			colorize();
+		}
+	});
+
+
+var logScaleCheck = d3.select("#logScaleCheck").on("change",function(){
+	colorize();
+});
+
+
+var zoom = d3.zoom()
+    .scaleExtent([.5, 40])
+    .translateExtent([[-200, -200], [w + 200, h + 200]])
+	.wheelDelta(function(){
+		return -d3.event.deltaY * (d3.event.deltaMode ? 120 : 1) / 3000;
+	})
+	.on("zoom", function(){
+			cellPoint.attr("transform", d3.event.transform);
+			gTraj.attr("transform", d3.event.transform);
+			gCurves.attr("transform", d3.event.transform);
+	});
+
+window.addEventListener('resize', function(){
+	resizeSVG();
+	if(chart!=null){
+		destroyViolin();
+		plotViolin();
+	}
+});
+	
+//SelAnnot !
+resizeSVG();
+Init();

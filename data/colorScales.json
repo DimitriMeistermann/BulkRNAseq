@@ -1,0 +1,15 @@
+{
+	"culture_media":{
+		"Fibro":"black",
+		"E7" : "grey",
+		"KSR+FGF2":"yellow",
+		"mTeSR1":"orange",
+		"RSeT":"#1D1DFF",
+		"T2iLGO":"#F04FAE"
+	},
+	"passage":[
+		"green",
+		"yellow",
+		"red"
+	]
+}

@@ -1,0 +1,256 @@
+html{
+    overflow-y: scroll;
+}
+
+html,body{
+	margin:0;
+	padding:0;
+	background-color:#D8D8CB;
+}
+
+h1{
+	font-size: 22px;
+}
+
+h2{
+	font-size:15px;
+	font-weight:bold;
+}
+
+#MainSVG{
+	border-right: 2px solid #D8D8CB;
+	border-bottom: 2px solid #D8D8CB;
+	vertical-align: top;
+	padding:0;
+	background-color:white;
+}
+
+.greyNature{
+	background-color:#D8D8CB;
+}
+
+#svgContainer{
+	padding:0;
+	
+}
+
+div.tooltipMain {	
+    position: absolute;									
+    padding: 2px;				
+    font: 12px sans-serif;		
+    border: 1px solid black;	
+    pointer-events: none;
+	
+}
+
+ul {
+	list-style-type: none;
+}
+
+header.jumbotron{
+	background-color: #004484;
+	margin-bottom:0px;
+	color: white;
+	border-radius:0;
+	padding-top: 20px;
+	padding-bottom: 20px;
+	
+}
+
+
+#radiusRange{
+	width: 100%;
+}
+
+#legendSVG{
+	width:100%;
+}
+
+#optionWindow{
+	background-color:#D8D8CB;
+}
+
+#optionWindow select, #optionWindow input[type="text"]{
+	font-size: 15px;
+}
+
+#formContainer{
+	padding-top:10px;
+	padding-bottom:10px;
+}
+
+#formContainer h2{
+	margin-left:10px;
+}
+
+#optionWindow button{
+	padding: 5px;
+}
+
+
+.colorSelection .form-control{
+	height:calc(2.25rem + 2px);
+}
+
+
+
+ .ui-autocomplete {
+    max-height: 250px;
+	overflow-y: auto;
+    overflow-x: hidden;
+	background-color: white;
+	border: 1px solid #ced4da;
+	width: 200px;
+	padding-left: 15px;
+}
+
+.ui-helper-hidden-accessible{
+	display: none;
+}
+
+
+#MainAccordion{
+	width: 100%;
+	margin: 0;
+	padding: 0;
+	overflow: visible ;
+	
+}
+
+.ui-accordion .ui-accordion-content {
+	padding: 0;
+	border-top: 0;
+	overflow: auto;
+	border-radius:0;
+}
+
+.ui-accordion .ui-accordion-header{
+	text-align: left;
+	border-radius:0;
+	border-width:0;
+}
+
+.ui-accordion-content .btn.btn-outline-secondary, .ui-accordion-content select.form-control, #searchGeneText{
+	border-radius:0;
+}
+
+
+
+#sliderContainer{
+	visibility:hidden;
+	margin-left:10px;
+	margin-bottom:10px;
+	width: 50%;
+}
+
+#legendContainer{
+	padding: 10px;
+}
+
+#exportContainer{
+	margin-bottom:30px;
+}
+
+#violinRow{
+	margin-bottom: 0;
+	padding-top: 10px;
+	padding-left: 10px;
+}
+
+.quantScaleOnly{
+	display: none;
+}
+
+#permaImageLegend{
+	margin-top:10px;
+	margin-left:2px;
+}
+
+#curvesContainer{
+	text-align:center;
+}
+
+.exprOnly{
+	display:none;
+}
+
+#curvesImg{
+	display:inline-block;
+	width:90%;
+	vertical-align: middle;
+	margin: auto;
+}
+
+#logScaleLabel{
+	margin-bottom:15px;
+	margin-top: 0;
+}
+
+#rightBottomContainer{
+	display:none;
+	opacity:0;
+}
+
+#headRightBottomContainer{
+	display: inline-block;
+	vertical-align: middle;
+	margin-bottom:0;
+	padding-bottom:0;
+	margin-right: 1em;
+}
+
+#geneTabListContainer tbody{
+	display: block;
+	overflow-y:scroll;
+	overflow-x:auto;
+	background-color: white;
+	max-height: 350px;
+}	
+
+#geneTabListContainer tbody tr{
+	width:100%;
+}
+
+#geneTabListContainer tbody tr:nth-child(even) {
+		background-color: #D8D8CB;
+}
+
+#RunSelect{
+	min-width: 100px;
+}
+
+#geneTabListContainer tbody tr:hover{
+	cursor: pointer;
+	background-color: #004484;
+	color:white;
+	font-weight:bold;
+}
+
+
+#geneTabListContainer td, #geneTabListContainer th{
+	padding-left: 10px;
+	padding-right: 10px;
+}
+
+#geneTabListContainer thead, #geneTabListContainer tbody tr {
+    display:table;
+    width:100%;
+    table-layout:fixed;/* even columns width , fix width of table too*/
+}
+#geneTabListContainer thead {
+    width: calc( 100% - 1em )/* scrollbar is average 1em/16px width, remove it from thead width */
+}
+
+#violinLegend{
+	width:100%;
+	overflow:visible;
+}
+
+#geneClustlink a:hover{
+	cursor: pointer;
+	color: #004484;
+}
+
+hr{
+	width: 100%;
+}
