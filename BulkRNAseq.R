@@ -133,29 +133,29 @@ batch<-TRUE; if(is.null(batchColumn)) batch<-FALSE
 for(column in c(condColumns,batchColumn)) sampleAnnot[,column]<-as.factor(as.character(sampleAnnot[,column]))# to be sure that condColums are factors
 
 #Check if there is problems in sample names
-if(sum(!rn(sampleAnnot)%in%cn(rawCounts))>0){warning("Error, these samples don't exist in expression data, please check sample names"); print(sampleExprInAnnot)}
-if(sum(!cn(rawCounts)%in%rn(sampleAnnot))>0){warning("these samples don't exist in sample table, they will be removed from expression data"); print(sampleAnnotInExpr)}
+if(sum(!rn(sampleAnnot)%in%cn(rawCounts))>0){warning("Error, these samples don't exist in expression data, please check sample names"); print(rn(sampleAnnot)[!rn(sampleAnnot)%in%cn(rawCounts)])}
+if(sum(!cn(rawCounts)%in%rn(sampleAnnot))>0){warning("these samples don't exist in sample table, they will be removed from expression data"); print(cn(rawCounts)[!cn(rawCounts)%in%rn(sampleAnnot)])}
 
 print("Processing quality control...")
 
 ### QC of raw counts table ###
 sampleQCstats<-examineRNAseqSamples(rawCounts);fastWrite(sampleQCstats,"results/QualityControlOfSamples.tsv")
-pdf("figs/QualityControlOfSamples.pdf",width = 9.5,height = 9)
-ggplot(sampleQCstats,mapping = aes(x=TotalCount,y=TotalGenEx,label=rn(sampleQCstats)))+
-	geom_vline(xintercept = minimumTotalCount,color="red",lwd=1)+
-	geom_hline(yintercept = minimumExpressedGenes,color="red",lwd=1)+
-	geom_point()+
-	xlab("Number of counts (Log10 scale)")+
-	ylab("Number of expressed genes")+
-	scale_x_log10()+
-	geom_text_repel()+
-	ggtitle("QC of samples, choosen thresholds in red")
-dev.off()
+pdf("figs/QualityControlOfSamples.pdf",width = 9.5,height = 9);print(
+	ggplot(sampleQCstats,mapping = aes(x=TotalCount,y=TotalGenEx,label=rn(sampleQCstats)))+
+		geom_vline(xintercept = minimumTotalCount,color="red",lwd=1)+
+		geom_hline(yintercept = minimumExpressedGenes,color="red",lwd=1)+
+		geom_point()+
+		xlab("Number of counts (Log10 scale)")+
+		ylab("Number of expressed genes")+
+		scale_x_log10()+
+		geom_text_repel()+
+		ggtitle("QC of samples, choosen thresholds in red")
+);dev.off()
 
 geneQCstats<-data.frame(mean=rowMeans(rawCounts),cv2=apply(rawCounts,1,cv2))
 fastWrite(geneQCstats,"results/QualityControlOfGenes.tsv")
 
-pdf("figs/QualityControlOfGenes.pdf",width = 9.5,height = 9)
+pdf("figs/QualityControlOfGenes.pdf",width = 9.5,height = 9);print(
 	ggplot(geneQCstats[geneQCstats$mean>0,],mapping = aes(x=mean,y=cv2))+
 		geom_vline(xintercept = minimumMeanCounts,color="red",lwd=1)+
 		geom_point()+
@@ -163,7 +163,7 @@ pdf("figs/QualityControlOfGenes.pdf",width = 9.5,height = 9)
 		xlab("Mean (log10 scale)")+
 		ylab("Squared coefficient of variation")+
 		ggtitle("QC of genes with at least one count, minimum mean counts in red")
-dev.off()
+);dev.off()
 
 sampleAnnot <- cbind(sampleAnnot,sampleQCstats)
 
@@ -180,7 +180,7 @@ if(!is.null(comparisonToDoFile)){
 	compMatrix<-apply(comparisonToDoTable,1,function(row){
 		if(!row["condColumn"]%in%cn(sampleAnnot)) stop(paste0(row["condColumn"]," does not exist in columns of sample annotation"))
 		for(value in c(row["downLevel"],row["upLevel"])){
-			if(!value%in%levels(sampleAnnot[,row["condColumn"]])) stop(paste0(value," is not a level of ",row["conditionColumn"]))
+			if(!value%in%levels(sampleAnnot[,row["condColumn"]])) stop(paste0(value," is not a level of ",row["condColumn"]))
 		}
 		return(c(row["condColumn"],row["downLevel"],row["upLevel"]))
 	})
@@ -367,7 +367,7 @@ fastWrite(pca$rotation,file="results/contribGenesPCA.tsv")
 ###Principal Component Regression (PCR)###
 pcReg<-PCR(pca,sampleAnnot[annot2Plot],nComponant = 10)
 
-pdf("figs/PrincipalComponantRegression.pdf",width = 8,height = 5)
+pdf("figs/PrincipalComponantRegression.pdf",width = 8,height = 5);print(
 ggBorderedFactors(ggplot(pcReg,aes(x=PC,y=Rsquared,fill=Annotation))+
 	geom_beeswarm(pch=21,size=4,cex = 3)+
 	xlab("Principal componant")+ylab("R²")+
@@ -378,7 +378,7 @@ ggBorderedFactors(ggplot(pcReg,aes(x=PC,y=Rsquared,fill=Annotation))+
 		panel.background = element_rect(fill = NA,colour="black")
 	)
 )
-dev.off()
+);dev.off()
 
 ### Correlation heatmap ###
 
@@ -438,7 +438,7 @@ heatmap.DM3(t(moduleActivationScore),scale = F,preSet = "default",
 						name="gene\nmodule\nactivation",column_split = sampleAnnot$sampleClusters)
 dev.off()
 
-AUCs<-getMarkers3(logCounts,sampleAnnot$sampleClusters)
+AUCs<-getMarkers3(logCounts,sampleAnnot$sampleClusters,BPPARAM=BPPARAM)
 
 bestMarkersPerCluster<-VectorListToFactor(lapply(data.frame(AUCs),function(auc){
 	rn(AUCs)[order(auc,decreasing = TRUE)][1:topGeneShown]
@@ -703,28 +703,29 @@ for(comp in significantComparisons){
 	)
 	dev.off()
 	
-	selectedTerms<-enrichResultsGSDA[enrichResultsGSDA$significant,]
-	selectedTerms<-selectedTerms[order(selectedTerms$pval),]
-	selectedTerms<-selectedTerms[1:min(nrow(selectedTerms),pathwayInFig),] #use top gene shown 
-	
-	selectedContrib<-apply(selectedTerms,1,function(term){
-		geneSetsEigens[[ term["database"] ]]$contribution[[ term["term"] ]]
-	});names(selectedContrib)<-selectedTerms$term
-	selectedActivations<-t(apply(selectedTerms,1,function(term){
-		geneSetsEigens[[ term["database"] ]]$eigen[term["term"],]
-	}));rownames(selectedActivations)<-selectedTerms$term
-	
-	
-	pdf(paste0("resPerComparison/",comp,"/GSDA_heatmap.pdf"),width = 25,height = 12)
-	heatmap.DM3(selectedActivations,midColorIs0 = T,center=F,
-							column_split= ifelse(sampleAnnot[,compMatrix[1,comp]] %in% c(compMatrix[2,comp],compMatrix[3,comp]),comp,"other samples"),
-							column_title_gp=gpar(fontsize=8),
-							name = "Activation score",preSet = "default",
-							right_annotation=rowAnnotation("gene contribution" = GSDA.HeatmapAnnot(contributions = selectedContrib,width = unit(4,"inches"))),
-							row_names_side ="left",row_dend_side ="left",sampleAnnot = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
-							row_names_max_width = unit(8, "inches"),autoFontSizeRow=FALSE,row_names_gp=gpar(fontsize=1/nrow(selectedActivations)*400))
-	dev.off()
-	
+	if(sum(enrichResultsGSDA$significant)>1){
+		selectedTerms<-enrichResultsGSDA[enrichResultsGSDA$significant,]
+		selectedTerms<-selectedTerms[order(selectedTerms$pval),]
+		selectedTerms<-selectedTerms[1:min(nrow(selectedTerms),pathwayInFig),] #use top gene shown 
+		
+		selectedContrib<-apply(selectedTerms,1,function(term){
+			geneSetsEigens[[ term["database"] ]]$contribution[[ term["term"] ]]
+		});names(selectedContrib)<-selectedTerms$term
+		selectedActivations<-t(apply(selectedTerms,1,function(term){
+			geneSetsEigens[[ term["database"] ]]$eigen[term["term"],]
+		}));rownames(selectedActivations)<-selectedTerms$term
+		
+		
+		pdf(paste0("resPerComparison/",comp,"/GSDA_heatmap.pdf"),width = 25,height = 12)
+		heatmap.DM3(selectedActivations,midColorIs0 = T,center=F,
+								column_split= ifelse(sampleAnnot[,compMatrix[1,comp]] %in% c(compMatrix[2,comp],compMatrix[3,comp]),comp,"other samples"),
+								column_title_gp=gpar(fontsize=8),
+								name = "Activation score",preSet = "default",
+								right_annotation=rowAnnotation("gene contribution" = GSDA.HeatmapAnnot(contributions = selectedContrib,width = unit(4,"inches"))),
+								row_names_side ="left",row_dend_side ="left",sampleAnnot = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
+								row_names_max_width = unit(8, "inches"),autoFontSizeRow=FALSE,row_names_gp=gpar(fontsize=1/nrow(selectedActivations)*400))
+		dev.off()
+	}
 }
 
 ## Over representation analysis of gene modules ##

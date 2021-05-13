@@ -20,7 +20,7 @@
  * @param settings.Xdomain order of the xDomain
  * @returns {object} chart A chart object
  */
-function makeDistroChart(settings) {
+ function makeDistroChart(settings) {
     var chart = {};
 
     // Defaults

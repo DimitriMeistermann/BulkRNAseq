@@ -14,7 +14,19 @@ Bulk RNA-Seq pipeline v4.0
 
 	**[optional]**: You can provide a "*comparison to do*" file and a "*color scales*" file. See the section *Inputs and outputs of the script* for more details.
 
-3. Run install.R
+3. Run install.R **OR** use conda with:
+	~~~
+	conda env import -f BulkRNAseq.yml
+	~~~
+	One of the required R library (*qualpar*) is not included in the conda environment, you must install it manually. Once the the environment is installed, activate it:
+	~~~
+	conda activate BulkRNAseq
+	~~~
+	Open a R session, and install qualpar with BiocManager:
+	~~~
+	BiocManager::install("qualpar")
+	~~~
+
 4. Change all necessary parameters in the *Configuration of parameters* section in the script *BulkRNAseq.R*.
 5. Run the script *BulkRNAseq.R*.
 

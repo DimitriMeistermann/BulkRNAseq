@@ -1,0 +1,34 @@
+name: BulkRNAseq
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - r-base
+  - bioconductor-biocinstaller
+  - r-biocmanager
+  - r-foreach
+  - r-data.table
+  - bioconductor-gage
+  - bioconductor-annotationdbi
+  - r-doparallel
+  - bioconductor-deseq2
+  - bioconductor-sva
+  - r-ggplot2
+  - bioconductor-annotationdbi
+  - bioconductor-fgsea
+  - r-ggrepel
+  - r-rjson
+  - r-rjsonio
+  - r-circlize
+  - bioconductor-complexheatmap
+  - r-ggbeeswarm
+  - r-uwot
+  - r-dbscan
+  - r-mass
+  - bioconductor-simplifyenrichment
+  - r-wgcna
+  - r-reshape2
+  - r-stringr
+  - r-scales
+  - bioconductor-pathview
