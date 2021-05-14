@@ -115,7 +115,7 @@ pathwayInFig<-50
 #### Loading Data ####
 ######################
 print("Loading data...")
-source("https://gitlab.univ-nantes.fr/E114424Z/veneR/raw/master/loadFun.R?inline=false") #Importing home made functions
+source("https://raw.githubusercontent.com/DimitriMeistermann/veneR/main/loadFun.R") #Importing home made functions
 
 ### prepocess ###
 if(!is.null(randomSeed)) set.seed(randomSeed)
