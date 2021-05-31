@@ -237,7 +237,7 @@ continuousPalettes<-list(
 i<-1;for(colorScaleName in colorScalesToGen){
 	annotVect<-sampleAnnot[,colorScaleName]
 	if(is.numeric(annotVect)){
-		colorScale<-continuousPalettes[[i]]
+		colorScales[[colorScaleName]]<-continuousPalettes[[i]]
 		i<-i+1
 	}else{
 		sampleAnnot[,colorScaleName]<-as.factor(as.character(sampleAnnot[,colorScaleName]))
