@@ -342,14 +342,14 @@ if(batch){ #batch effect control
 }
 
 
-visualizedComponant<-4
+visualizedComponent<-4
 fixedCoord=FALSE #is X vs Y scale proportional to explained variance ?
 plotLabelRepel=TRUE #show sample names ?
 
 pdf(file = "figs/PrincipalComponentAnalysis.pdf",width=10,height=10)
 barplotPercentVar(pca)
-for(i in 1:(visualizedComponant-1)){
-  for(j in (i+1):visualizedComponant){
+for(i in 1:(visualizedComponent-1)){
+  for(j in (i+1):visualizedComponent){
   	for(annot in annot2Plot){
   		pca2d(pca,group = sampleAnnot[annot],pointSize = 4,comp = c(i,j),main="Principal Component Analysis",
   					fixedCoord = fixedCoord,colorScales = colorScales[[annot]],plotLabelRepel=plotLabelRepel)
@@ -365,12 +365,12 @@ dev.off()
 fastWrite(pca$rotation,file="results/contribGenesPCA.tsv")
 
 ###Principal Component Regression (PCR)###
-pcReg<-PCR(pca,sampleAnnot[annot2Plot],nComponant = 10)
+pcReg<-PCR(pca,sampleAnnot[annot2Plot],nComponent = 10)
 
-pdf("figs/PrincipalComponantRegression.pdf",width = 8,height = 5);print(
+pdf("figs/PrincipalComponentRegression.pdf",width = 8,height = 5);print(
 ggBorderedFactors(ggplot(pcReg,aes(x=PC,y=Rsquared,fill=Annotation))+
 	geom_beeswarm(pch=21,size=4,cex = 3)+
-	xlab("Principal componant")+ylab("R²")+
+	xlab("Principal component")+ylab("R²")+
 	scale_fill_manual(values = mostDistantColor2(length(annot2Plot)))+
 	theme(
 		panel.grid.major.y = element_line(colour = "grey75"),
@@ -665,7 +665,7 @@ enrichResultsGSEAPerComp<-foreach(comp=significantComparisons) %do%{
 }
 
 
-### Gene Set Differential Activation (experimental) ##
+### Gene Set Differential Activation (experimental) ####
 print("Preparing GSDA enrichment...")
 
 geneSetsEigens<-computeActivationScore(logCounts,db_terms = geneSetsDatabase)

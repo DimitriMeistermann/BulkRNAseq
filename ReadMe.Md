@@ -130,7 +130,7 @@ Example file to give if you want to make specific comparisons between your group
  ┣ 📜**PrincipalComponentAnalysis.pdf**
  PCA main figure. Percentage of variance of data explained for each principal component, then for the first combination of two PCs: projection of samples colored by variable from sample annotations, correlation circle (contribution of genes to the PCs, or gene eigenvalues).
 
- ┣ 📜**PrincipalComponantRegression.pdf**
+ ┣ 📜**PrincipalComponentRegression.pdf**
 The PCR regression of PCs from the PCA on given features (here variable from sample annotations). The given R squared is representing the link between the PC and the variable.
 
  ┣ 📜**superHeatmap.pdf**
