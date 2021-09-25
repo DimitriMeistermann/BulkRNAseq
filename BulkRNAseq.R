@@ -512,7 +512,7 @@ DEresults<-foreach(comp=colnames(compMatrix)) %dopar%{ #change 'dopar' by 'do' t
 	print(paste0("Computing differentially expressed genes for comparison [",condColumn,": ",downLevel," vs ",upLevel,"]"))
 	
 	
-	DEresult<-data.frame(results(dds, contrast=c(condColumn,downLevel,upLevel), 
+	DEresult<-data.frame(results(dds, contrast=c(condColumn,upLevel,downLevel), 
 																				independentFiltering = TRUE,alpha = padjThreshold))
 	DEresult<-cbind(data.frame(gene=rownames(DEresult),stringsAsFactors = FALSE),DEresult)
 	DEresult$isDE<-"NONE"
@@ -524,7 +524,7 @@ DEresults<-foreach(comp=colnames(compMatrix)) %dopar%{ #change 'dopar' by 'do' t
 	### P val histogram ###
 	pdf(paste0("resPerComparison/",comp,"/pvalHistogram.pdf"),width = 10,height = 8)
 	print(ggplot(data.frame(DEresult),mapping=aes(pvalue))+
-		geom_histogram(binwidth = 0.05)+
+		geom_histogram(binwidth = 0.05,boundary=TRUE,boundary=TRUE)+
 		geom_hline(yintercept = median(table(cut(DEresult$pvalue,breaks = seq(0,1,0.05),include.lowest = FALSE))))
 	)
 	dev.off()
@@ -620,7 +620,7 @@ enrichResultsGSEAPerComp<-foreach(comp=significantComparisons) %do%{
   
   pdf(paste0("resPerComparison/",comp,"/GSEA_pvalHistogram.pdf"),width = 6 ,height = 5)
   print(ggplot(enrichResultsGSEA,mapping=aes(pval))+
-  	geom_histogram(binwidth = 0.05)+
+  	geom_histogram(binwidth = 0.05,boundary=TRUE)+
   	geom_hline(yintercept = median(table(cut(enrichResultsGSEA$pval,breaks = seq(0,1,0.05),include.lowest = FALSE)))))
   dev.off()
   
@@ -685,7 +685,7 @@ for(comp in significantComparisons){
 													db_terms = geneSetsDatabase)
 	pdf(paste0("resPerComparison/",comp,"/GSDA_pvalHistogram.pdf"),width = 6 ,height = 5)
 	print(ggplot(enrichResultsGSDA,mapping=aes(pval))+
-		geom_histogram(binwidth = 0.05)+
+		geom_histogram(binwidth = 0.05,boundary=TRUE)+
 		geom_hline(yintercept = median(table(cut(enrichResultsGSDA$pval,breaks = seq(0,1,0.05),include.lowest = FALSE))))
 	)
 	dev.off()
