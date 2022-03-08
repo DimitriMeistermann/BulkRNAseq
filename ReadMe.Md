@@ -3,7 +3,7 @@ Bulk RNA-Seq pipeline v4.0
 --------------------------
 
 # Installation and launch:
-1. Download the script (for example: `git clone https://gitlab.univ-nantes.fr/E114424Z/BulkRNAseq.git`)
+1. Download the script (for example: `git clone git@github.com:DimitriMeistermann/BulkRNAseq.git`)
 2. Put data files (expression table and sample annotation table) in the same format as examples (.tsv with header and row names).
 	
 	**[optional]**: if you work behind a proxy you may have to change your *~/.Renviron* file. Example for University of Nantes :
