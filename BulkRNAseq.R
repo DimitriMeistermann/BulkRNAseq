@@ -1,37 +1,24 @@
 #!/usr/bin/env Rscript
 
-setwd("D:/PHDwork/Scripts/BulkRNAseq/") #Put your Working Directory
+setwd("/PostdocUnsync/workflows/BulkRNAseq/") #Put your Working Directory
 
 library(BiocParallel)
 library(foreach)
 library(data.table)
-library(gage)
-library(AnnotationDbi)
-library(stats4)
-library(BiocGenerics)
 library(parallel)
 library(DESeq2)
-library(sva)
 library(ggplot2)
-library(AnnotationDbi)
-library(fgsea)
 library(ggrepel)
-library(rjson)
-library(circlize)
-library(ComplexHeatmap)
 library(ggbeeswarm)
-library(uwot)
-library(dbscan)
-library(MASS)
-library(simplifyEnrichment)
-library(WGCNA)
-library(qualpalr)
-library(reshape2)
+library(rjson)
 library(RJSONIO)
 library(stringr)
 library(doParallel)
-library(scales)
-library(pathview)
+library(oob)
+library(sva)
+library(WGCNA)
+library(ComplexHeatmap)
+library(gage)
 
 #multithread init
 BPPARAM = bpparam()
@@ -47,16 +34,16 @@ wd=getwd()
 # /!\ Please verify carefully this section /!\ #
 
 #expression file path
-expressionData<-"data/rawCounts.tsv" 
+expressionData<-"inputs/rawCounts.tsv" 
 
 #sample annotation table path
-sampleTable<-"data/sampleAnnot.tsv" 
+sampleTable<-"inputs/sampleAnnot.tsv" 
 
 #Name of column in sample annotation to use for batch correction, can be set to NULL if there is no batch correction to perform.
 batchColumn<-"run" 
 
 #[Optional] Path of file that is containing 
-comparisonToDoFile<-"data/ComparisonToDo.tsv"
+comparisonToDoFile<-"inputs/ComparisonToDo.tsv"
 
 #name of conditions column in sample table for DE genes (design of the experiment). Several values can be provided
 #example with test data : c("culture_media",line")
@@ -65,7 +52,7 @@ condColumns<-NULL
 #[Optional] other columns used for plots and analysis but not included in experimental design, can be set to NULL
 otherInterestingColumn<-c("passage")
 
-#[Optional] seed of the Random Nuomber Genrator (RNG). If it is fixed by an integer, results of the script will be reproducible (See ?Random).
+#[Optional] seed of the Random Number Generator (RNG). If it is fixed by an integer, results of the script will be reproducible (See ?Random).
 # Can be set to NULL. If so, some results will be slightly random.
 # It can be useful to turn it to NULL for being sure that your results are biased by an exceptional event in the analysis.
 randomSeed<-666
@@ -73,7 +60,7 @@ randomSeed<-666
 #[Optional] json file with color scales, can be set to NULL.
 # It can be incomplete: color scales that are not provided in this file will be computed automatically.
 # For factors, order of the levels will be kept from this file
-colorScaleFile="data/colorScales.json" 
+colorScaleFile="inputs/colorScales.json" 
 
 #data(bods); print(bods) #to see available species
 sample.species<-"Human"
@@ -115,15 +102,14 @@ pathwayInFig<-50
 #### Loading Data ####
 ######################
 print("Loading data...")
-source("https://raw.githubusercontent.com/DimitriMeistermann/veneR/main/loadFun.R") #Importing home made functions
 
 ### prepocess ###
 if(!is.null(randomSeed)) set.seed(randomSeed)
 if(is.null(condColumns) & is.null(comparisonToDoFile)) stop("You must provide a value for condColumn or ComparisonToDoFile")
 #Creating dirs
-dir.create("results",showWarnings=F)
-dir.create("figs",showWarnings=F)
-dir.create("rsave",showWarnings=F)
+dir.create("outPlots",showWarnings=F)
+dir.create("outText",showWarnings=F)
+dir.create("outRobj",showWarnings=F)
 dir.create("resPerComparison",showWarnings=F)
 #Loading files
 rawCounts<-fastRead(expressionData,as.matrix = TRUE)
@@ -139,8 +125,8 @@ if(sum(!cn(rawCounts)%in%rn(sampleAnnot))>0){warning("these samples don't exist 
 print("Processing quality control...")
 
 ### QC of raw counts table ###
-sampleQCstats<-examineRNAseqSamples(rawCounts);fastWrite(sampleQCstats,"results/QualityControlOfSamples.tsv")
-pdf("figs/QualityControlOfSamples.pdf",width = 9.5,height = 9);print(
+sampleQCstats<-computeQCmetricSamples(rawCounts);fastWrite(sampleQCstats,"outText/QualityControlOfSamples.tsv")
+pdf("outPlots/QualityControlOfSamples.pdf",width = 9.5,height = 9);print(
 	ggplot(sampleQCstats,mapping = aes(x=TotalCount,y=TotalGenEx,label=rn(sampleQCstats)))+
 		geom_vline(xintercept = minimumTotalCount,color="red",lwd=1)+
 		geom_hline(yintercept = minimumExpressedGenes,color="red",lwd=1)+
@@ -153,9 +139,9 @@ pdf("figs/QualityControlOfSamples.pdf",width = 9.5,height = 9);print(
 );dev.off()
 
 geneQCstats<-data.frame(mean=rowMeans(rawCounts),cv2=apply(rawCounts,1,cv2))
-fastWrite(geneQCstats,"results/QualityControlOfGenes.tsv")
+fastWrite(geneQCstats,"outText/QualityControlOfGenes.tsv")
 
-pdf("figs/QualityControlOfGenes.pdf",width = 9.5,height = 9);print(
+pdf("outPlots/QualityControlOfGenes.pdf",width = 9.5,height = 9);print(
 	ggplot(geneQCstats[geneQCstats$mean>0,],mapping = aes(x=mean,y=cv2))+
 		geom_vline(xintercept = minimumMeanCounts,color="red",lwd=1)+
 		geom_point()+
@@ -242,13 +228,13 @@ i<-1;for(colorScaleName in colorScalesToGen){
 	}else{
 		sampleAnnot[,colorScaleName]<-as.factor(as.character(sampleAnnot[,colorScaleName]))
 		annotVect<-sampleAnnot[,colorScaleName]
-		colorScales[[colorScaleName]]<-mostDistantColor2(nlevels(annotVect))
+		colorScales[[colorScaleName]]<-mostDistantColor(nlevels(annotVect))
 		names(colorScales[[colorScaleName]])<-levels(annotVect)
 	}
 }
 
 #Species preparation
-species.data<-getSpeciesData2(sample.species)
+species.data<-getSpeciesData(sample.species)
 
 
 ###########################################
@@ -276,29 +262,29 @@ logCounts<-assay(vst(dds))
 
 logCounts<-logCounts-min(logCounts) #so 0 is 0
 
-fastWrite(normCounts,"results/normCounts.tsv")
-fastWrite(logCounts,"results/logCounts.tsv")
+fastWrite(normCounts,"outText/normCounts.tsv")
+fastWrite(logCounts,"outText/logCounts.tsv")
 
 if(batch){
   uncorrectedCounts<-logCounts
 	logCounts<-ComBat(uncorrectedCounts,batch = sampleAnnot[,batchColumn],	
 										mod = model.matrix(data=sampleAnnot,formula(paste0("~",paste(condColumns,collapse="+")))),BPPARAM = bpparam())
   
-	logCounts<-scaleRangePerRow(logCounts,uncorrectedCounts)
+	logCounts<-reScale(logCounts,uncorrectedCounts)
   #each gene expression of the corrected values was subtracted by the minimum of the gene 
   #expression before the batch correction. 
   #This step does not change the relative expression of genes; 
   #however, it permits an easier interpretation of the expression values as minimums cannot be less than zero.
 	
   normCounts<-2^logCounts - 1
-  fastWrite(normCounts,"results/normCorrectedCounts.tsv")
-  fastWrite(logCounts,"results/logCorrectedCounts.tsv")
+  fastWrite(normCounts,"outText/normCorrectedCounts.tsv")
+  fastWrite(logCounts,"outText/logCorrectedCounts.tsv")
 }
 
-fastWrite(CPM(rawCounts),"results/countsPerMillion.tsv")
+fastWrite(CPM(rawCounts),"outText/countsPerMillion.tsv")
 
 print("Checkpoint #1")
-save.image("rsave/Step1.RData")
+save.image("outRobj/Step1.RData")
 
 
 #############################
@@ -307,11 +293,11 @@ save.image("rsave/Step1.RData")
 #Over-dispersion plot
 print("Computing overdispersion plot...")
 
-geneAnnot<-getMostVariableGenes4(normCounts,minCount = 0,plot = FALSE)
+geneAnnot<-getMostVariableGenes(normCounts,minCount = 0,plot = FALSE)
 
 genesOrderedByDispersion<-rn(geneAnnot)[order(geneAnnot$residuals,decreasing = TRUE)]
 
-pdf("figs/overDispersionPlot.pdf",width = 16,height = 9)
+pdf("outPlots/overDispersionPlot.pdf",width = 16,height = 9)
 ggplot(geneAnnot,aes(x=mu,y=cv2,label=rownames(dispTable),fill=residuals))+
 	geom_point(stroke=1/8,colour = "black",shape=21)+geom_line(aes(y=fitted),color="red",size=1.5)+
 	scale_x_log10()+scale_y_log10()+xlab("mean")+ylab("Squared coefficient of variation")+
@@ -327,15 +313,15 @@ pca<-PCA(logCounts)
 if(batch){ #batch effect control
 	condColumn<-condColumns[1] #ploT only 1st condition column for QC
 	pcaUncorrected <- PCA(uncorrectedCounts)
-	g1<-pca2d(pcaUncorrected,comp=c(1,2),group = sampleAnnot[condColumn],colorScales =  colorScales[[condColumn]],
+	g1<-pca2d(pcaUncorrected,comp=c(1,2),colorBy = sampleAnnot[condColumn],colorScale =  colorScales[[condColumn]],
 						main="PCA on normalized/transformed counts",returnGraph = TRUE)
-	g2<-pca2d(pcaUncorrected,comp=c(1,2),group = sampleAnnot[batchColumn],colorScales = colorScales[[batchColumn]],
+	g2<-pca2d(pcaUncorrected,comp=c(1,2),colorBy = sampleAnnot[batchColumn],colorScale = colorScales[[batchColumn]],
 						main="PCA on normalized/transformed counts",returnGraph = TRUE)
-	g3<-pca2d(pca,comp=c(1,2),group = sampleAnnot[condColumn],colorScales = colorScales[[condColumn]],
+	g3<-pca2d(pca,comp=c(1,2),colorBy = sampleAnnot[condColumn],colorScale = colorScales[[condColumn]],
 						main="PCA on normalized/transformed/corrected counts",returnGraph = TRUE)
-	g4<-pca2d(pca,comp=c(1,2),group = sampleAnnot[batchColumn],colorScales = colorScales[[batchColumn]],
+	g4<-pca2d(pca,comp=c(1,2),colorBy = sampleAnnot[batchColumn],colorScale = colorScales[[batchColumn]],
 						main="PCA on normalized/transformed/corrected counts",returnGraph = TRUE)
-	pdf("figs/BatchEffectCorrectionControl.pdf",width = 10,height = 9)
+	pdf("outPlots/BatchEffectCorrectionControl.pdf",width = 10,height = 9)
 	multiplot(g1,g2,g3,g4,cols = 2)
 	dev.off()
 	rm(pcaUncorrected)
@@ -346,32 +332,32 @@ visualizedComponent<-4
 fixedCoord=FALSE #is X vs Y scale proportional to explained variance ?
 plotLabelRepel=TRUE #show sample names ?
 
-pdf(file = "figs/PrincipalComponentAnalysis.pdf",width=10,height=10)
+pdf(file = "outPlots/PrincipalComponentAnalysis.pdf",width=10,height=10)
 barplotPercentVar(pca)
 for(i in 1:(visualizedComponent-1)){
   for(j in (i+1):visualizedComponent){
   	for(annot in annot2Plot){
-  		pca2d(pca,group = sampleAnnot[annot],pointSize = 4,comp = c(i,j),main="Principal Component Analysis",
-  					fixedCoord = fixedCoord,colorScales = colorScales[[annot]],plotLabelRepel=plotLabelRepel)
+  		pca2d(pca,colorBy = sampleAnnot[annot],pointSize = 4,comp = c(i,j),main="Principal Component Analysis",
+  					fixedCoord = fixedCoord,colorScale = colorScales[[annot]],plotLabelRepel=plotLabelRepel)
   	}
   	pca2d(pca,pointSize = 1.2,comp = c(i,j),plotVars = TRUE, outlierLabel = TRUE,
-  				fixedCoord = fixedCoord,colorScales = condColors,main="Correlation circle")
+  				fixedCoord = fixedCoord,colorScale = condColors,main="Correlation circle")
   	#change outlierLabelThres (between 0 and 1 to display names of more or less genes)
   }
 }
 
 dev.off()
 
-fastWrite(pca$rotation,file="results/contribGenesPCA.tsv")
+fastWrite(pca$rotation,file="outText/contribGenesPCA.tsv")
 
 ###Principal Component Regression (PCR)###
 pcReg<-PCR(pca,sampleAnnot[annot2Plot],nComponent = 10)
 
-pdf("figs/PrincipalComponentRegression.pdf",width = 8,height = 5);print(
+pdf("outPlots/PrincipalComponentRegression.pdf",width = 8,height = 5);print(
 ggBorderedFactors(ggplot(pcReg,aes(x=PC,y=Rsquared,fill=Annotation))+
 	geom_beeswarm(pch=21,size=4,cex = 3)+
-	xlab("Principal component")+ylab("R²")+
-	scale_fill_manual(values = mostDistantColor2(length(annot2Plot)))+
+	xlab("Principal component")+ylab("R?")+
+	scale_fill_manual(values = mostDistantColor(length(annot2Plot)))+
 	theme(
 		panel.grid.major.y = element_line(colour = "grey75"),
 		panel.grid.minor.y = element_line(colour = "grey75"),
@@ -385,37 +371,33 @@ ggBorderedFactors(ggplot(pcReg,aes(x=PC,y=Rsquared,fill=Annotation))+
 print("Computing correlation heatmap of samples...")
 sampleCorrelations<-cor(logCounts)
 
-pdf(file = "figs/HeatmapCorPearson.pdf",width=10,height=9)
-heatmap.DM3(sampleCorrelations,preSet = "correlation",center = FALSE,midColorIs0 = FALSE,
-						sampleAnnot = sampleAnnot[annot2Plot],colorAnnot = colorScales)
+pdf(file = "outPlots/HeatmapCorPearson.pdf",width=10,height=9)
+heatmap.DM(sampleCorrelations,preSet = "cor",center = FALSE,midColorIs0 = FALSE,
+					 colData = sampleAnnot[annot2Plot],colorAnnot = colorScales)
 
-if(batch) heatmap.DM3(cor(uncorrectedCounts),preSet = "correlation",center = FALSE,midColorIs0 = FALSE,
-											sampleAnnot = sampleAnnot[annot2Plot],colorAnnot = colorScales,
+if(batch) heatmap.DM(cor(uncorrectedCounts),preSet = "cor",center = FALSE,midColorIs0 = FALSE,
+											colData = sampleAnnot[annot2Plot],colorAnnot = colorScales,
 											name = "Pearson\ncorrelation\n(no batch\neffect correction)")
 dev.off()
 
 ### UMAP & Clustering ###
 print("Computing UMAP and unsupervised gene/sample clusters...")
-selectedGenes<-rn(geneAnnot)[geneAnnot$residuals>0]
+selectedGenes<-rn(geneAnnot)[geneAnnot$residuals>Mode(geneAnnot$residuals)]
 
-umap<-make.umap2(logCounts[selectedGenes,],n_epochs=2000)
-umapHighDim<-make.umap2(logCounts[selectedGenes,],
-												n_components = 10,n_epochs=2000,n_neighbors = min(20,nrow(sampleAnnot)))
-
-sampleClustering=dbscan::hdbscan(umapHighDim,minPts = 2)
-sampleAnnot$sampleClusters <- as.factor(paste0("k",sampleClustering$cluster))
+umap<-UMAP(logCounts[selectedGenes,],n_epochs=2000,ret_nn = TRUE,n_neighbors = ncol(logCounts))
+sampleAnnot$sampleClusters <- leidenFromUMAP(umap)
 
 if(is.null(colorScales$sampleClusters)) colorScales$sampleClusters <- genColorsForAnnots(sampleAnnot["sampleClusters"])$sampleClusters
 
-pdf("figs/UMAP.pdf",width = 8,height = 7)
-proj2d(umap,group=sampleAnnot["sampleClusters"],colorScale = colorScales$sampleClusters,plotFactorsCentroids = TRUE,fixedCoord = T)
-for(annot  in annot2Plot) proj2d(umap,group=sampleAnnot[annot],colorScale = colorScales[[annot]],fixedCoord = T)
+pdf("outPlots/UMAP.pdf",width = 8,height = 7)
+proj2d(umap$embedding,colorBy=sampleAnnot["sampleClusters"],colorScale = colorScales$sampleClusters,plotFactorsCentroids = TRUE,fixedCoord = T)
+for(annot  in annot2Plot) proj2d(umap$embedding,colorBy=sampleAnnot[annot],colorScale = colorScales[[annot]],fixedCoord = T)
 dev.off()
 
-geneClustering=hierarchicalClustering(logCounts[selectedGenes,],transpose = FALSE,method.dist = "bicor")
-geneCluster<-cutree(geneClustering,k = best.cutree2(geneClustering,min = 4))
+geneCluster<-UMAP(logCounts[selectedGenes,],transpose = FALSE,metric = "correlation",ret_nn = TRUE) |> leidenFromUMAP(resolution_parameter = 1)
+str_replace_all(geneCluster,"k","M");names(geneCluster)<-selectedGenes
 
-geneAnnot$Module<-"M0";geneAnnot[names(geneCluster),"Module"]<-paste0("M",alphabetOrderByAdding0(geneCluster))
+geneAnnot$Module<-"M0";geneAnnot[names(geneCluster),"Module"]<-geneCluster
 geneAnnot$Module<-as.factor(geneAnnot$Module)
 trueGeneModules<-levels(geneAnnot$Module)[levels(geneAnnot$Module)!="M0"]
 
@@ -432,46 +414,46 @@ for(gene in rn(geneAnnot)[geneAnnot$Module!="M0"]) {
 	geneAnnot[gene,"Membership"]<-moduleMembership[gene,as.character(geneAnnot[gene,"Module"])]
 }
 
-pdf("figs/moduleActivationScore.pdf",width = 10,height = 10)
-heatmap.DM3(t(moduleActivationScore),scale = F,preSet = "default",
-						midColorIs0 = TRUE,sampleAnnot = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
+pdf("outPlots/moduleActivationScore.pdf",width = 10,height = 10)
+heatmap.DM(t(moduleActivationScore),scale = F,preSet = NULL,
+						midColorIs0 = TRUE,colData = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
 						name="gene\nmodule\nactivation",column_split = sampleAnnot$sampleClusters)
 dev.off()
 
-AUCs<-getMarkers3(logCounts,sampleAnnot$sampleClusters,BPPARAM=BPPARAM)
+AUCs<-getMarkers(logCounts,sampleAnnot$sampleClusters,BPPARAM=BPPARAM)
 
 bestMarkersPerCluster<-VectorListToFactor(lapply(data.frame(AUCs),function(auc){
-	rn(AUCs)[order(auc,decreasing = TRUE)][1:topGeneShown]
+	rn(AUCs)[whichTop(auc,topGeneShown)]
 }))
 
-pdf("figs/markersOfUnsupervisedClusters.pdf",width = 10,height = 10)
-heatmap.DM3(logCounts[names(bestMarkersPerCluster),],sampleAnnot = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
+pdf("outPlots/markersOfUnsupervisedClusters.pdf",width = 10,height = 10)
+heatmap.DM(logCounts[names(bestMarkersPerCluster),],colData = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
 						column_split = sampleAnnot$sampleClusters,row_split=bestMarkersPerCluster,clustering_distance_columns = "pearson")
 dev.off()
 
-fastWrite(AUCs,"results/markerAUCsPerSampleCluster.tsv")
-fastWrite(moduleActivationScore,"results/moduleActivationScore.tsv")
-fastWrite(moduleMembership,"results/moduleMembership.tsv")
-fastWrite(geneAnnot,"results/geneAnnotations.tsv")
-fastWrite(sampleAnnot,"results/sampleAnnotations.tsv")
+fastWrite(AUCs,"outText/markerAUCsPerSampleCluster.tsv")
+fastWrite(moduleActivationScore,"outText/moduleActivationScore.tsv")
+fastWrite(moduleMembership,"outText/moduleMembership.tsv")
+fastWrite(geneAnnot,"outText/geneAnnotations.tsv")
+fastWrite(sampleAnnot,"outText/sampleAnnotations.tsv")
 
 ###Super Heatmap###
 print("Computing the super heatmap...")
 htList<-list()
 
 genes<-rn(geneAnnot)[geneAnnot$Module=="M0"]
-ht<-heatmap.DM3(logCounts[genes,],showGrid = F,
+ht<-heatmap.DM(logCounts[genes,],showGrid = F,
 													 use_raster = TRUE,raster_quality = 5,returnHeatmap = TRUE,
 													 column_split = sampleAnnot$sampleClusters,
 													 height = unit(log2(len(genes))/5, "cm"),
-													 cluster_row_slices = FALSE,sampleAnnot = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
+													 cluster_row_slices = FALSE,colData = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
 													 row_title_gp=gpar(fontsize=9),column_title_gp=gpar(fontsize=9),
 													 cluster_column_slices = FALSE,border = TRUE,name="expression",row_title_rot = 0,
 													 show_row_names = F,show_column_names = F,row_title = paste0("M0\n",length(genes)," genes"))
 
 for(mod in trueGeneModules){
 	genes<-rn(geneAnnot)[geneAnnot$Module==mod]
-	htList[[mod]]<-heatmap.DM3(logCounts[genes,],showGrid = F,
+	htList[[mod]]<-heatmap.DM(logCounts[genes,],showGrid = F,
 									 use_raster = TRUE,raster_quality = 5,returnHeatmap = TRUE,
 									 column_split = sampleAnnot$sampleClusters,
 									 height = unit(log2(len(genes))/5, "cm"),cluster_row_slices = FALSE,
@@ -486,14 +468,14 @@ for(i in 1:length(htList)){
 	suppressWarnings(ht<- ht %v% htList[[i]])
 }
 
-pdf("figs/superHeatmap.pdf",height = length(trueGeneModules)+1.5,width = 10)
+pdf("outPlots/superHeatmap.pdf",height = length(trueGeneModules)+1.5,width = 10)
 draw(ht,clustering_distance_columns = "pearson",clustering_method_columns="ward.D2")
 dev.off()
 
 rm(htList,ht)
 
 print("Checkpoint #2")
-save.image("rsave/Step2.RData")
+save.image("outRobj/Step2.RData")
 
 
 
@@ -507,8 +489,8 @@ DEresults<-foreach(comp=colnames(compMatrix)) %dopar%{ #change 'dopar' by 'do' t
 	library(DESeq2)
 	library(ggplot2)
 	condColumn<-compMatrix[1,comp]
-	upLevel<-compMatrix[2,comp]
-	downLevel<-compMatrix[3,comp]
+	upLevel<-compMatrix["upLevel",comp]
+	downLevel<-compMatrix["downLevel",comp]
 	print(paste0("Computing differentially expressed genes for comparison [",condColumn,": ",downLevel," vs ",upLevel,"]"))
 	
 	
@@ -556,7 +538,7 @@ DEresults<-foreach(comp=colnames(compMatrix)) %dopar%{ #change 'dopar' by 'do' t
 	dev.off()
 	
 	pdf(paste0("resPerComparison/",comp,"/focusOnTop10genes.pdf"),width = 12,height = 8)
-	plotExpression(normCounts[gene2Plot[1:10],],sampleAnnot[condColumn],colorScale = colorScales[[condColumn]],printGraph = TRUE)
+	plotExpr(normCounts[gene2Plot[1:10],],sampleAnnot[condColumn],colorScale = colorScales[[condColumn]])
 	dev.off()
 	
 	return(DEresult)
@@ -574,20 +556,20 @@ significantComparisons<-c(); for(comp in comparisonToDo) if(sum(DEresults[[comp]
 for (comp in significantComparisons){
 	DEgenes<-DEgenesPerComparison[[comp]]
 	pdf(paste0("resPerComparison/",comp,"/heatmapDEgenes.pdf"),width = 10,height = 10)
-	heatmap.DM3(logCounts[DEgenes,],
+	heatmap.DM(logCounts[DEgenes,],
 							column_split= ifelse(sampleAnnot[,compMatrix[1,comp]] %in% c(compMatrix[2,comp],compMatrix[3,comp]),comp,"other samples"),
-							sampleAnnot = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],row_split=DEresults[[comp]][DEgenes,"isDE"])
+						 colData = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],row_split=DEresults[[comp]][DEgenes,"isDE"])
 	dev.off()
 }
 
 
 ####UpSet plot####
-pdf("figs/upsetPlot.pdf",width = 10,height = 6)
+pdf("outPlots/upsetPlot.pdf",width = 10,height = 6)
 customUpsetPlot(DEgenesPerComparison,universe = rownames(logCounts))
 dev.off()
 
 print("Checkpoint #3")
-save.image("rsave/Step3.RData")
+save.image("outRobj/Step3.RData")
 
 ###############################
 #### Functional Enrichment ####
@@ -596,19 +578,19 @@ save.image("rsave/Step3.RData")
 print("Downloading gene set databases...")
 
 # geneSetsDatabase=list(msigdb=gmtPathways("data/msigdb.v7.2.symbols.gmt")) #alternative for human
-geneSetsDatabase<-getDBterms2(rn(logCounts),speciesData = species.data,returnGenesSymbol = TRUE,database=c("kegg","goBP"))
+geneSetsDatabase<-getDBterms(rn(logCounts),speciesData = species.data,returnGenesSymbol = TRUE,database=c("kegg","goBP"))
 
 ### fGSEA ####
 enrichResultsGSEAPerComp<-foreach(comp=significantComparisons) %do%{
 	condColumn<-compMatrix[1,comp]
-	upLevel<-compMatrix[2,comp]
-	downLevel<-compMatrix[3,comp]
+	upLevel<-compMatrix["upLevel",comp]
+	downLevel<-compMatrix["downLevel",comp]
 	print(paste0("Computing GSEA enrichment for comparison [",condColumn,": ",downLevel," vs ",upLevel,"]"))
 	
 	DEres<-DEresults[[comp]]
-  scoreEnrich<-calConsensusRanking(rownames(DEres),DEres$pvalue,DEres$log2FoldChange)
+  scoreEnrich<-fcsScoreDEgenes(rownames(DEres),DEres$pvalue,DEres$log2FoldChange)
   
-  enrichResultsGSEA<-Enrich.gsea(scoreEnrich,speciesData = species.data,db_terms = geneSetsDatabase,returnGenes = TRUE)
+  enrichResultsGSEA<-enrich.fcs(scoreEnrich,speciesData = species.data,db_terms = geneSetsDatabase,returnGenes = TRUE)
   
 
   enrichResultsGSEA$significant<-FALSE
@@ -616,7 +598,7 @@ enrichResultsGSEAPerComp<-foreach(comp=significantComparisons) %do%{
   
   enrichResultsGSEA<-data.frame(enrichResultsGSEA[,1:(ncol(enrichResultsGSEA)-2)],enrichResultsGSEA[,"significant"],enrichResultsGSEA[,"genes"]) #reorder columns
   
-  exportEnrich.2(enrichResultsGSEA,paste0("resPerComparison/",comp,"/GSEA_enrichment.tsv"))
+  exportEnrich(enrichResultsGSEA,paste0("resPerComparison/",comp,"/GSEA_enrichment.tsv"))
   
   pdf(paste0("resPerComparison/",comp,"/GSEA_pvalHistogram.pdf"),width = 6 ,height = 5)
   print(ggplot(enrichResultsGSEA,mapping=aes(pval))+
@@ -632,7 +614,6 @@ enrichResultsGSEAPerComp<-foreach(comp=significantComparisons) %do%{
   									inherit.aes = FALSE,color="grey50"))
   dev.off()
   
-  
   if(sum(enrichResultsGSEA$significant)>0){
   	pathwayToPlot<-enrichResultsGSEA[enrichResultsGSEA$significant,]
   	pathwayToPlot<-pathwayToPlot[order(pathwayToPlot$pval),]
@@ -645,9 +626,9 @@ enrichResultsGSEAPerComp<-foreach(comp=significantComparisons) %do%{
   		genesNotNA<-genesOfPathway[genesOfPathway%in%rownames(logCounts)]
   		db<-pathwayToPlot[i,"database"]
   		if(!length(genesNotNA)>2) next
-  		heatmap.DM3(logCounts[genesNotNA,],
+  		heatmap.DM(logCounts[genesNotNA,],
 				column_split = ifelse(sampleAnnot[,compMatrix[1,comp]] %in% c(compMatrix[2,comp],compMatrix[3,comp]),comp,"other samples"),
-				sampleAnnot = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
+				colData = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
 				row_title=paste0(term,"\nFrom ",db,", ",length(genesNotNA),"/",length(genesOfPathway)," genes detected")
   		)
   	}
@@ -671,17 +652,17 @@ print("Preparing GSDA enrichment...")
 geneSetsEigens<-computeActivationScore(logCounts,db_terms = geneSetsDatabase)
 
 for(db in names(geneSetsEigens)){
-	fastWrite(geneSetsEigens[[db]]$eigen,paste0("results/geneSetActivations_",db,".tsv"))
-	write.vectorList(geneSetsEigens[[db]]$contribution,paste0("results/geneSetsContributions_",db,".tsv"))
+	fastWrite(geneSetsEigens[[db]]$eigen,paste0("outText/geneSetActivations_",db,".tsv"))
+	write.vectorList(geneSetsEigens[[db]]$contribution,paste0("outText/geneSetsContributions_",db,".tsv"))
 }
 
 for(comp in significantComparisons){
 	condColumn<-compMatrix[1,comp]
-	upLevel<-compMatrix[2,comp]
-	downLevel<-compMatrix[3,comp]
+	upLevel<-compMatrix["upLevel",comp]
+	downLevel<-compMatrix["downLevel",comp]
 	print(paste0("Computing GSDA enrichment for comparison [",condColumn,": ",downLevel," vs ",upLevel,"]"))
 	
-	enrichResultsGSDA<-GSDA(geneSetEigens = geneSetsEigens,colData = sampleAnnot,contrast = compMatrix[,comp],
+	enrichResultsGSDA<-GSDA(geneSetActivScore = geneSetsEigens,colData = sampleAnnot,contrast = compMatrix[,comp],
 													db_terms = geneSetsDatabase)
 	pdf(paste0("resPerComparison/",comp,"/GSDA_pvalHistogram.pdf"),width = 6 ,height = 5)
 	print(ggplot(enrichResultsGSDA,mapping=aes(pval))+
@@ -717,12 +698,12 @@ for(comp in significantComparisons){
 		
 		
 		pdf(paste0("resPerComparison/",comp,"/GSDA_heatmap.pdf"),width = 25,height = 12)
-		heatmap.DM3(selectedActivations,midColorIs0 = T,center=F,
+		heatmap.DM(selectedActivations,midColorIs0 = T,center=F,
 								column_split= ifelse(sampleAnnot[,compMatrix[1,comp]] %in% c(compMatrix[2,comp],compMatrix[3,comp]),comp,"other samples"),
 								column_title_gp=gpar(fontsize=8),
-								name = "Activation score",preSet = "default",
+								name = "Activation score",preSet = NULL,
 								right_annotation=rowAnnotation("gene contribution" = GSDA.HeatmapAnnot(contributions = selectedContrib,width = unit(4,"inches"))),
-								row_names_side ="left",row_dend_side ="left",sampleAnnot = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
+								row_names_side ="left",row_dend_side ="left",colData = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
 								row_names_max_width = unit(8, "inches"),autoFontSizeRow=FALSE,row_names_gp=gpar(fontsize=1/nrow(selectedActivations)*400))
 		dev.off()
 	}
@@ -731,17 +712,17 @@ for(comp in significantComparisons){
 ## Over representation analysis of gene modules ##
 print("Computing enrichment of gene modules...")
 
-dir.create("results/EnrichmentPerGeneModule",showWarnings = F)
+dir.create("outText/EnrichmentPerGeneModule",showWarnings = F)
 null<-foreach(module=trueGeneModules) %dopar%{
 	isInModule<-geneAnnot$Module==module;names(isInModule)<-rownames(geneAnnot)
-	exportEnrich.2(
-		Enrich.simple(isInModule,speciesData = species.data,db_terms = geneSetsDatabase,returnGenes = TRUE),
-		paste0("results/EnrichmentPerGeneModule/",module,".tsv")
+	exportEnrich(
+		enrich.ora(isInModule,speciesData = species.data,db_terms = geneSetsDatabase,returnGenes = TRUE),
+		paste0("outText/EnrichmentPerGeneModule/",module,".tsv")
 	)
 }
 
 print("Checkpoint #4")
-save.image("rsave/Step4.RData")
+save.image("outRobj/Step4.RData")
 
 ###############################
 #### Generation of web app ####

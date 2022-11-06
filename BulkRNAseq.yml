@@ -4,31 +4,37 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - r-base
+  - bioconductor-annotationdbi
+  - bioconductor-annotationdbi
   - bioconductor-biocinstaller
-  - r-biocmanager
-  - r-foreach
-  - r-data.table
-  - bioconductor-gage
-  - bioconductor-annotationdbi
-  - r-doparallel
+  - bioconductor-complexheatmap
   - bioconductor-deseq2
-  - bioconductor-sva
-  - r-ggplot2
-  - bioconductor-annotationdbi
   - bioconductor-fgsea
+  - bioconductor-gage
+  - bioconductor-pathview
+  - bioconductor-simplifyenrichment
+  - bioconductor-sva
+  - r-base
+  - r-biocmanager
+  - r-circlize
+  - r-data.table
+  - r-devtools
+  - r-dbscan
+  - r-doparallel
+  - r-foreach
+  - r-ggbeeswarm
+  - r-ggplot2
   - r-ggrepel
+  - r-mass
+  - r-reshape2
+  - r-reticulate
   - r-rjson
   - r-rjsonio
-  - r-circlize
-  - bioconductor-complexheatmap
-  - r-ggbeeswarm
-  - r-uwot
-  - r-dbscan
-  - r-mass
-  - bioconductor-simplifyenrichment
-  - r-wgcna
-  - r-reshape2
-  - r-stringr
   - r-scales
-  - bioconductor-pathview
+  - r-stringr
+  - r-uwot
+  - r-wgcna
+  - python-igraph
+  - numpy
+  - leidenalg
+  - trimap
