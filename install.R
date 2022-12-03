@@ -25,5 +25,6 @@ install("reticulate", update=FALSE)
 install("devtools", update=FALSE)
 
 #oob install
-devtools::install("https://github.com/DimitriMeistermann/oob")
+install.packages("devtools")
+devtools::install_github("https://github.com/DimitriMeistermann/oob")
 reticulate::py_install(c("igraph","numpy","leidenalg","trimap"))
