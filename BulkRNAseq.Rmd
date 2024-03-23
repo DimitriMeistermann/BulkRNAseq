@@ -1,0 +1,1423 @@
+---
+title: "Bulk RNA-Seq pipeline v5.0"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+    collapse = TRUE,
+    comment = "#>",
+    fig.dim = c(8,8),
+    fig.align = "center",
+    out.width="100%",
+    out.height = 720,
+    cache = TRUE,
+    warning=FALSE
+)
+```
+
+```{css, echo=FALSE}
+/* if you have a small screen you can decrease max-width value */
+.main-container {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+embed{
+  width: 100%;
+}
+```
+
+
+# Bulk RNA-Seq pipeline
+
+## Installation and inputs
+
+For installation run [install.R]("https://github.com/DimitriMeistermann/BulkRNAseq/blob/release/install.R").
+See [ReadMe]("https://github.com/DimitriMeistermann/BulkRNAseq/blob/release/ReadMe.Md") for more instructions.
+
+### Inputs
+
+ 📂**data** Contains the inputs given by the user.\
+ ┣ 📜**colorScales.json** Example of file to give for custom color scales in figures. If this file is not given, or if some variable are not mapped to colors, remaining color scales that are necessary for the script will be automatically computed.\
+ ┣ 📜**ComparisonToDo.tsv**
+ Example file to give if you want to make specific comparisons between your groups of samples, if this file is not given, all possible comparisons will be done.\
+ ┣ 📜**msigdb.v7.2.symbols.gmt** Example of custom gene set database for enrichment.\
+ ┣ 📜**rawCounts.tsv** Raw counts table of gene expression.\
+ ┗ 📜**sampleAnnot.tsv** 
+ Sample annotations (data for each sample that are not gene expression).
+
+### Warnings
+- Sample names can contain characters (upper and lower case), digits, dots and underscores. It must begin with a character. Samples that are not following these guidelines will be automatically renamed.
+- Do not open counts table files with Excel then save: Excel converts some gene names into date.
+- Do not hesitate to remove abnormal sample (see figs/QualityControlOfSamples.pdf). You can edit manually the variable *sample2keep* to remove samples without editing input files.
+- For each condition you must have a minimum n of 2, otherwise you can run the script up to `save.image("rsave/Step2.RData")`. Bulk RNA-Seq analysis should be made with at least 6 biological replicates per group, more if the conditions are close in term of gene expression, or if the experimental design is complex.
+
+## Preprocess
+
+### Setup
+
+Execute this code each time you launch the script, even for launching from a checkpoint.
+
+```{r setup}
+library(oob)
+library(GSDS)
+
+library(BiocParallel)
+library(doParallel)
+library(foreach)
+library(parallel)
+library(stringr)
+library(DESeq2)
+library(sva)
+library(ggrepel)
+library(ggbeeswarm)
+library(rjson)
+library(RJSONIO)
+library(gage)
+library(pathview)
+
+#multithread init
+BPPARAM = bpparam()
+register(BPPARAM = BPPARAM)
+registerDoParallel(cores = BPPARAM$workers)
+wd=getwd()
+source("scripts/functions.R") #Additional functions for this script
+```
+### Configuration of parameters
+Please change the following parameters carefully to fit your needs.
+
+```{r parameters}
+# expression file path
+expressionData<-"inputs/rawCounts.tsv" 
+
+# sample annotation table path
+sampleTable<-"inputs/sampleAnnot.tsv" 
+
+# Name of column in sample annotation to use for batch correction, can be set to NULL if there is no batch correction to perform.
+batchColumn<-"run" 
+
+# [Optional] Path of file that is containing 
+comparisonToDoFile<-"inputs/ComparisonToDo.tsv"
+
+# name of conditions column in sample table for DE genes (design of the experiment). Several values can be provided
+# example with test data : c("culture_media",line")
+condColumns<-NULL
+
+# [Optional] other columns used for plots and analysis but not included in experimental design, can be set to NULL
+otherInterestingColumn<-c("passage")
+
+# [Optional] seed of the Random Number Generator (RNG). If it is fixed by an integer, results of the script will be reproducible (See ?Random).
+# Can be set to NULL. If so, some results will be slightly random.
+# It can be useful to turn it to NULL for being sure that your results are biased by an exceptional event in the analysis.
+randomSeed<-666
+
+# [Optional] json file with color scales, can be set to NULL.
+# It can be incomplete: color scales that are not provided in this file will be computed automatically.
+# For factors, order of the levels will be kept from this file
+colorScaleFile="inputs/colorScales.json" 
+
+# data(bods); print(bods) #to see available species
+sample.species<-"Human"
+
+# Benjamini & Hochberg pvalue threshold to consider a gene as differentially expressed
+padjThreshold<-0.05
+
+# adjusted p-val threshold for enrichment test
+enrichThreshold<-0.05 
+
+# Absolute Log2(Fold-Change) threshold (if LFCthreshold=1, gene is differentially expressed if expressed 2 time more or less between folds)
+LFCthreshold<-1 
+
+# Minimum number of UMI in a sample to be kept in the analysis
+minimumTotalCount<-200000 
+
+# Minimum number of expressed genes in a sample to be kept in the analysis
+minimumExpressedGenes<-5000 
+
+# Minimum mean count of a gene to be kept in the analysis
+minimumMeanCounts <- 0.1
+
+# Top N gene shown in various plot (overdispersion plot, volcano...)
+topGeneShown = 50
+
+# Number of max pathway heatmap by comparison
+pathwayInFig<-50
+
+# Number of Principal Components from PCA to plot and used for functional enrichment
+visualizedComponents<-4
+
+# Do additional analyses usually done in the single-cell context
+# Make a 2D Trimap projection, compute gene modules and unsupervised sample clusters
+# Also build a web app for visualising those additional results
+# Only interesting for big dataset (>30 samples)
+analysesForLargeDatset<-TRUE
+```
+
+### Loading the data
+
+Please check any error or warning message in the following code. If there is any, please correct the error and re-run the code.
+
+```{r loadingData}
+### prepocess ###
+if(!is.null(randomSeed)) set.seed(randomSeed)
+if(is.null(condColumns) & is.null(comparisonToDoFile)) stop("You must provide a value for condColumn or ComparisonToDoFile")
+#Creating dirs
+dir.create("outPlots",showWarnings=F)
+dir.create("outText",showWarnings=F)
+dir.create("outRobj",showWarnings=F)
+dir.create("resPerComparison",showWarnings=F)
+#Loading files
+rawCounts<-fastRead(expressionData,as.matrix = TRUE)
+sampleAnnot<-fastRead(sampleTable,stringsAsFactors = TRUE)
+rownames(sampleAnnot)<-make.names(rownames(sampleAnnot),unique = TRUE)
+batch<-TRUE; if(is.null(batchColumn)) batch<-FALSE
+for(column in c(condColumns,batchColumn)) sampleAnnot[,column]<-as.factor(as.character(sampleAnnot[,column]))# to be sure that condColums are factors
+
+#Check if there is problems in sample names
+if(sum(!rn(sampleAnnot)%in%cn(rawCounts))>0){warning("Error, these samples don't exist in expression data, please check sample names"); print(rn(sampleAnnot)[!rn(sampleAnnot)%in%cn(rawCounts)])}
+if(sum(!cn(rawCounts)%in%rn(sampleAnnot))>0){warning("these samples don't exist in sample table, they will be removed from expression data"); print(cn(rawCounts)[!cn(rawCounts)%in%rn(sampleAnnot)])}
+rawCounts<-rawCounts[,rn(sampleAnnot)]
+```
+
+## Quality control of the raw counts table
+
+**Generated files**
+
+ 📂**outPlots** Output figures.\
+ ┣ 📜**QualityControlOfSamples.pdf**
+ Number of expressed genes (at least one count) for each sample in function of number of counts. Samples below the red lines are excluded from the analysis. You should adjust the parameter of the script by examining this figure (for example, discard isolated samples).\
+ ┗📜**QualityControlOfGenes.pdf**
+ Close to the overdispersion plot but before the normalization of data. You can adjust the threshold to eliminate gene that are close tobe not expressed at all, and hence, have aberrant dispersion.\
+ 📂**outText** Output data in text formats.\
+ ┣ 📜**QualityControlOfGenes.tsv** Values of *QualityControlOfGenes.pdf*\
+ ┗ 📜**sampleAnnot.tsv** Sample annotations (data for each sample that are not gene expression), updated from given file with QC metrics.
+
+```{r QC}
+sampleQCstats<-computeQCmetricSamples(rawCounts)
+
+pdf("outPlots/QualityControlOfSamples.pdf",width = 9.5,height = 9);
+print(ggplot(sampleQCstats,mapping = aes(x=TotalCount,y=TotalGenEx,label=rn(sampleQCstats)))+
+	geom_vline(xintercept = minimumTotalCount,color="red",lwd=1)+
+	geom_hline(yintercept = minimumExpressedGenes,color="red",lwd=1)+
+	geom_point()+
+	xlab("Number of counts (Log10 scale)")+
+	ylab("Number of expressed genes")+
+	scale_x_log10()+
+	geom_text_repel()+
+	ggtitle("QC of samples, choosen thresholds in red"))
+dev.off()
+
+geneQCstats<-data.frame(mean=rowMeans(rawCounts),cv2=apply(rawCounts,1,cv2))
+fastWrite(geneQCstats,"outText/QualityControlOfGenes.tsv")
+
+pdf("outPlots/QualityControlOfGenes.pdf",width = 9.5,height = 9)
+print(ggplot(geneQCstats[geneQCstats$mean>0,],mapping = aes(x=mean,y=cv2))+
+	geom_vline(xintercept = minimumMeanCounts,color="red",lwd=1)+
+	geom_point()+
+	scale_x_log10()+
+	xlab("Mean (log10 scale)")+
+	ylab("Squared coefficient of variation")+
+	ggtitle("QC of genes with at least one count, minimum mean counts in red"))
+dev.off()
+
+sampleAnnot <- cbind(sampleAnnot,sampleQCstats)
+sample2keep<-rn(sampleQCstats)[sampleQCstats$TotalGenEx>minimumExpressedGenes & sampleQCstats$TotalCount>minimumTotalCount]
+sample2rm<-rn(sampleAnnot)[!rn(sampleAnnot)%in%sample2keep]
+if(len(sample2rm)>0)
+    warning("these samples don't pass the quality control, they will be removed from analysis:\n", paste0(sample2rm, collapse = ", "))
+    
+sampleAnnot<-sampleAnnot[sample2keep,]
+rawCounts<-rawCounts[geneQCstats$mean>minimumMeanCounts,rn(sampleAnnot)]
+
+fastWrite(sampleAnnot,"outText/sampleAnnot.tsv")
+
+knitr::include_graphics(c("outPlots/QualityControlOfSamples.pdf", "outPlots/QualityControlOfGenes.pdf"))
+```
+
+
+## Process color comparison matrix, color scales, and download species data
+
+This should not raise any error.
+
+```{r processColorComparisonMatrix}
+### process of comparisons matrix (compMatrix) ###
+if(!is.null(comparisonToDoFile)){
+	comparisonToDoTable<-fastRead(comparisonToDoFile,row.names = NULL)
+	compMatrix<-apply(comparisonToDoTable,1,function(row){
+		if(!row["condColumn"]%in%cn(sampleAnnot)) stop(paste0(row["condColumn"]," does not exist in columns of sample annotation"))
+		for(value in c(row["downLevel"],row["upLevel"])){
+			if(!value%in%levels(sampleAnnot[,row["condColumn"]])) stop(paste0(value," is not a level of ",row["condColumn"]))
+		}
+		return(c(row["condColumn"],row["downLevel"],row["upLevel"]))
+	})
+	condColumns<-unique(comparisonToDoTable$condColumn)
+	rm(comparisonToDoTable)
+}else{
+	compMatrix<-do.call("cbind",lapply(condColumns,function(condColumn){
+		mat<-combn(levels(sampleAnnot[,condColumn]),2)
+		return(rbind(rep(condColumn,ncol(mat)),mat))
+	}))
+	rownames(compMatrix)<-c("condColumn","downLevel","upLevel")
+}
+colnames(compMatrix)<-make.names(apply(compMatrix,2,function(x) paste(x["condColumn"],x["downLevel"],x["upLevel"],sep = "_")))
+comparisonToDo<-colnames(compMatrix)
+for(comp in comparisonToDo) dir.create(paste0("resPerComparison/",comp),showWarnings=F)
+
+### color scales generation ###
+annot2Plot <- c(condColumns, batchColumn,otherInterestingColumn)
+colorScalesToGen <- annot2Plot
+colorScales<-list()
+
+if(!is.null(colorScaleFile)){
+	colorScalesFromFile <- lapply(rjson::fromJSON(file = colorScaleFile),function(lvl) unlist(lvl))
+	for(colorScaleName in names(colorScalesFromFile)){
+		if(!colorScaleName%in%colorScalesToGen) stop("Condition '",colorScaleName,"' does not match with existing condition names in ",colorScaleFile)
+		colorScale<-colorScalesFromFile[[colorScaleName]]
+		annotVect<-sampleAnnot[,colorScaleName]
+		if(!is.null(names(colorScale))){ #factors
+			if(is.numeric(annotVect)){
+				warning(colorScaleName," is numeric but encoded as factors (color vector has names) in ",colorScaleFile,". It will be converted to factors.")
+				sampleAnnot[,colorScaleName]<-as.factor(as.character(sampleAnnot[,colorScaleName]))
+				annotVect<-sampleAnnot[,colorScaleName]
+			}else if(!is.factor(annotVect)){
+				stop(colorScaleName," is not factors or numeric, please check the sample annotation table.")
+			}
+			if(sum(!levels(annotVect) %in% names(colorScale))>0) stop("Levels of ",colorScaleName," are existing in sample annotation table but not in ",colorScaleFile)
+			sampleAnnot[,colorScaleName]<-factor(annotVect,levels = names(colorScale)) #reordering levels
+			colorScales[[colorScaleName]]<-colorScale
+		}else{ #numeric
+			if(!is.numeric(annotVect)) stop(colorScaleName," is not numeric but encoded as numeric (color vector has no names) in ",colorScaleFile)
+			colorScales[[colorScaleName]]<-colorScale
+		}
+	}
+	colorScalesToGen<-setdiff(colorScalesToGen,names(colorScalesFromFile))
+	rm(colorScalesFromFile)
+}
+
+continuousPalettes<-list(
+	c("#440154","#6BA75B","#FDE725"),
+	c("#2EB538","#1D1D1B","#DC0900"),
+	c("#FFFFC6","#FF821B","#950961")
+)
+
+i<-1;for(colorScaleName in colorScalesToGen){
+	annotVect<-sampleAnnot[,colorScaleName]
+	if(is.numeric(annotVect)){
+		colorScales[[colorScaleName]]<-continuousPalettes[[i]]
+		i<-i+1
+	}else{
+		sampleAnnot[,colorScaleName]<-as.factor(as.character(sampleAnnot[,colorScaleName]))
+		annotVect<-sampleAnnot[,colorScaleName]
+		colorScales[[colorScaleName]]<-mostDistantColor(nlevels(annotVect))
+		names(colorScales[[colorScaleName]])<-levels(annotVect)
+	}
+}
+
+#Species preparation
+species.data<-getSpeciesData(sample.species)
+```
+
+## Normalisation, Regularisation & batch correction
+
+Batch correction is optional, hence related files may not be generated.
+
+**Generated files**
+
+ 📂**outText** Output data in text formats.\
+ ┣ 📜**normCounts.tsv** Normalized counts table, each gene follows a negative binomial distribution. Useful for plotting expression and work with methods that handle negative binomial distribution.\
+ ┣ 📜**normCorrectedCounts.tsv** Normalized counts table but batch corrected.\
+ ┣ 📜**logCounts.tsv** Log normalized counts table, each gene follows approximatively a normal distribution. Useful for most of multivariate analyses. NB: To be more precise, these counts are not logged but a variance stabilization transformation (VST) has been applied. Result is closed but less biased than real log counts (usually $log2(expr+1)$ ).\
+ ┣ 📜**logCorrectedCounts.tsv** Log normalized counts table but batch corrected.\
+ ┗ 📜**countsPerMillion.tsv** CPM: Raw count table adjusted by library size then multiplied by one million. If the technology of sequencing is UMI-based, then we can also talk about UPM (UMI Per Million) or TPM (Transcript Per Million). This count table is useful for representing gene expression, but should not be chosen for analysis purposes.\
+
+```{r normalisation}
+# Computing DESeq2 model
+formulaChar<-paste0("~",paste(condColumns,collapse = "+"))
+if(batch){
+	sampleAnnot[,batchColumn]<-as.factor(as.character(sampleAnnot[,batchColumn]))
+	formulaChar<-paste0(formulaChar,"+",batchColumn)
+}
+dds <- DESeqDataSetFromMatrix(countData = rawCounts,
+                                    colData = sampleAnnot,
+                                    design = formula(formulaChar)) 
+
+dds <- DESeq(dds,parallel=TRUE)
+
+normCounts<-counts(dds,normalize=TRUE)
+logCounts<-assay(vst(dds))
+
+logCounts<-logCounts-min(logCounts) #so 0 is 0
+
+fastWrite(normCounts,"outText/normCounts.tsv")
+fastWrite(logCounts,"outText/logCounts.tsv")
+
+if(batch){
+  uncorrectedCounts<-logCounts
+	logCounts<-ComBat(uncorrectedCounts,batch = sampleAnnot[,batchColumn],	
+										mod = model.matrix(data=sampleAnnot,formula(paste0("~",paste(condColumns,collapse="+")))),BPPARAM = bpparam())
+  
+	logCounts<-reScale(logCounts,uncorrectedCounts)
+  #each gene expression of the corrected values was subtracted by the minimum of the gene 
+  #expression before the batch correction. 
+  #This step does not change the relative expression of genes; 
+  #however, it permits an easier interpretation of the expression values as minimums cannot be less than zero.
+	
+  normCounts<-2^logCounts - 1
+  fastWrite(normCounts,"outText/normCorrectedCounts.tsv")
+  fastWrite(logCounts,"outText/logCorrectedCounts.tsv")
+}
+
+fastWrite(CPM(rawCounts),"outText/countsPerMillion.tsv")
+
+```
+
+```{r checkPoint1}
+gc()
+save.image("outRobj/checkPoint1.RData")
+```
+
+## Unsupervised analyses
+
+### Over dispersion plot
+
+**Generated files**
+
+ 📂**outPlots** Output figures. \
+ ┗ 📜**overDispersionPlot.pdf** Dispersion in function of average expression for each gene. A regression is fitted and represent the theoretical dispersion for a given mean. A gene above this curve is *overdispersed* and is likely to be differentially expressed as his dispersion can not be explained only by technical and biological variations between samples from the same populations. Genes that are under the curves are *underdispersed*, and could be for instance be a good candidate as a housekeeping gene for a PCR.\
+ 📂**outText** Output data in text formats.\
+ ┗ 📜**geneAnnotations.tsv** Statistics on each gene, with the following columns:
+ 
+- *mu*: average expression
+- *var*: dispersion (variance)
+- *cv2*: The squared coefficient of variation $(\frac{variance}{mean^2})^2$ is another dispersion estimator. It is also the y-axis of the overdispersion plot.
+- *residuals*: distance between the fitted line in overdispersion plot and the gene. Can be interpreted as an overdispersion score. 
+- *residuals2*: Squared residuals.
+- *fitted*: y-value of the regression curve at the same x-axis than the gene.Can be interpreted as the expected dispersion for the gene.
+
+```{r overdispersionPlot}
+geneAnnot<-getMostVariableGenes(normCounts,minCount = 0,plot = FALSE)
+
+genesOrderedByDispersion<-rn(geneAnnot)[order(geneAnnot$residuals,decreasing = TRUE)]
+
+pdf("outPlots/overDispersionPlot.pdf",width = 16,height = 9)
+print(
+    ggplot(geneAnnot,aes(x=mu,y=cv2,label=rownames(dispTable),fill=residuals))+
+    	geom_point(stroke=1/8,colour = "black",shape=21)+geom_line(aes(y=fitted),color="red",linewidth=1.5)+
+    	scale_x_log10()+scale_y_log10()+xlab("mean")+ylab("Squared coefficient of variation")+
+        computeColorScaleFun(
+            c("#440154FF", "white", "#FF7D1B"),
+            geneAnnot$residuals,
+            useProb = F,
+            midColorIs0 = TRUE,
+            returnGGscale = TRUE,
+            geomAes = "fill"
+        )+
+        geom_text_repel(
+            data = geneAnnot[genesOrderedByDispersion[1:topGeneShown], ],
+            inherit.aes = FALSE,
+            mapping = aes(x = mu, y = cv2, label = genesOrderedByDispersion[1:topGeneShown]),
+            size = 3,
+            fontface = "bold.italic"
+        )
+)
+dev.off()
+
+fastWrite(geneAnnot,"outText/geneAnnotations.tsv")
+
+knitr::include_graphics("outPlots/overDispersionPlot.pdf")
+```
+
+### Square correlation heatmap
+
+**Generated files**
+
+ 📂**outPlots** Output figures.\
+ ┗ 📜**squareCorHeatmapSamples.pdf** Square heatmap of the sample to sample Pearson correlation. If there is a step of batch correction, the second page is the heatmap before the batch correction.
+ 
+```{r squareHeatmap}
+
+sampleCorrelations<-cor(logCounts)
+
+pdf(file = "outPlots/squareCorHeatmapSamples.pdf",width=10,height=9)
+heatmap.DM(
+    sampleCorrelations,
+    preSet = "cor",
+    center = FALSE,
+    midColorIs0 = FALSE,
+    colData = sampleAnnot[annot2Plot],
+    colorAnnot = colorScales[annot2Plot]
+)
+if(batch){
+    heatmap.DM(
+        cor(uncorrectedCounts),
+        preSet = "cor",
+        center = FALSE,
+        midColorIs0 = FALSE,
+        colData = sampleAnnot[annot2Plot],
+        colorAnnot = colorScales[annot2Plot],
+        name = "Pearson\ncorrelation\n(no batch\neffect correction)"
+    )
+}
+dev.off()
+
+knitr::include_graphics("outPlots/squareCorHeatmapSamples.pdf")
+
+```
+
+
+### Principal Component Analysis (PCA)
+
+**Generated files**
+
+ 📂**outPlots** Output figures.\
+ ┣ 📜**BatchEffectCorrectionControl.pdf**  (if batch correction was performed)\
+ Control of the effect of batch correction. This figure contains a PCA before and after batch correction, with the first variable of the experimental design and the variable of batch projected on them.\
+ ┗ 📜**PrincipalComponentAnalysis.pdf** PCA main figure. Percentage of variance of data explained for each principal component, then for the first combination of two PCs: projection of samples colored by variable from sample annotations, correlation circle (contribution of genes to the PCs, or gene eigenvalues).\
+ 📂**outText** Output data in text formats.\
+ ┗ 📜**contribGenesPCA.tsv** Eigengenes of PCA (values of correlation circles).
+ 
+```{r PCA}
+
+### Principal Component Analysis (PCA) ###
+pca<-PCA(logCounts)
+if(batch){ #batch effect control
+	condColumn<-condColumns[1] #ploT only 1st condition column for QC
+	pcaUncorrected <- PCA(uncorrectedCounts)
+	g1<-pca2d(pcaUncorrected,comp=c(1,2),colorBy = sampleAnnot[condColumn],colorScale =  colorScales[[condColumn]],
+						main="PCA on normalized/transformed counts",returnGraph = TRUE)
+	g2<-pca2d(pcaUncorrected,comp=c(1,2),colorBy = sampleAnnot[batchColumn],colorScale = colorScales[[batchColumn]],
+						main="PCA on normalized/transformed counts",returnGraph = TRUE)
+	g3<-pca2d(pca,comp=c(1,2),colorBy = sampleAnnot[condColumn],colorScale = colorScales[[condColumn]],
+						main="PCA on normalized/transformed/corrected counts",returnGraph = TRUE)
+	g4<-pca2d(pca,comp=c(1,2),colorBy = sampleAnnot[batchColumn],colorScale = colorScales[[batchColumn]],
+						main="PCA on normalized/transformed/corrected counts",returnGraph = TRUE)
+	pdf("outPlots/BatchEffectCorrectionControl.pdf",width = 10,height = 9)
+	multiplot(g1,g2,g3,g4,cols = 2)
+	dev.off()
+	rm(pcaUncorrected, g1, g2, g3, g4)
+}
+
+# visualizedComponent : number of components to visualize
+# ratioPerPercentVar : is X vs Y scale proportional to explained variance ?
+# plotLabelRepel=TRUE : show sample names ?
+
+pdf(file = "outPlots/PrincipalComponentAnalysis.pdf",
+    width = 10,
+    height = 9)
+plotPCsPairs(pca,
+             sampleAnnot,
+             annot2Plot,
+             colorScales,
+             visualizedComponent = visualizedComponents,
+             ratioPerPercentVar = FALSE,
+             plotLabelRepel = TRUE)
+dev.off()
+
+fastWrite(pca$rotation,file="outText/contribGenesPCA.tsv")
+
+if(batch) knitr::include_graphics("outPlots/BatchEffectCorrectionControl.pdf")
+knitr::include_graphics("outPlots/PrincipalComponentAnalysis.pdf")
+```
+
+
+### PCA - Analysis of Variance (PCANOVA)###
+
+**Generated files**
+
+ 📂**outPlots** Output figures.\
+ ┗ 📜**PCANOVA.pdf** Links between experimental variables and principal components from a Principal Component analysis of variance.
+The idea is to perform an *anova* on the principal components and to plot the % of variance explained by each variable for each principal component.\
+ 📂**outText** Output data in text formats.\
+ ┗ 📜**PCANOVA.tsv** PCANOVA results.        
+
+
+```{r PCaov}
+PCaovRes<-PCaov(pca,sampleAnnot[annot2Plot],nComponent = 10)
+pdf("outPlots/PCANOVA.pdf",width = 8,height = 5)
+print(
+    ggBorderedFactors(
+        ggplot(PCaovRes, aes(
+            x = PC, y = sumSqPercent, fill = feature
+        )) +
+            geom_beeswarm(pch = 21, size = 4, cex = 3) +
+            xlab("Principal component") + ylab("% Sum of Squares") +
+            scale_fill_manual(values = oobColors(nlevels(PCaovRes$feature))) +
+            theme(
+                panel.grid.major.y = element_line(colour = "grey75"),
+                panel.grid.minor.y = element_line(colour = "grey75"),
+                panel.background = element_rect(fill = NA, colour = "black")
+            )
+    )
+)
+dev.off()
+
+fastWrite(PCaovRes,file="outText/PCANOVA.tsv")
+knitr::include_graphics("outPlots/PCANOVA.pdf")
+```
+
+### Large datasets analysis
+
+If you do not have a lot of samples (<30), resume to [DE genes analysis]("## Differential expression (DE) analysis"). 
+Those analyses are usually performed in the single-cell context, but can be useful for large bulk RNA-seq datasets.
+
+#### TRIMAP
+
+**Generated files**
+
+ 📂**outPlots** Output figures.\
+ ┗ 📜**TRIMAP.pdf** 
+ 
+ 2D projection of the data using TRIMAP, 
+colored by unsupervised sample clusters determined by the Leiden algorithm for the first page,
+then by other experimental variables.
+ 
+```{r TRIMAP, eval=analysesForLargeDatset}
+print("Computing TRIMAP and unsupervised gene/sample clusters...")
+selectedGenes <-
+    rn(geneAnnot)[geneAnnot$residuals > Mode(geneAnnot$residuals)]
+
+trimap <- TRIMAP(logCounts[selectedGenes, ])
+sampleAnnot$sampleClusters <-
+    leidenFromUMAP(UMAP(logCounts, ret_nn = TRUE))
+
+if (is.null(colorScales$sampleClusters))
+    colorScales$sampleClusters <-
+    genColorsForAnnots(sampleAnnot["sampleClusters"])$sampleClusters
+
+
+pdf("outPlots/TRIMAP.pdf", width = 8, height = 7)
+proj2d(
+    trimap,
+    colorBy = sampleAnnot["sampleClusters"],
+    colorScale = colorScales$sampleClusters,
+    plotFactorsCentroids = TRUE
+)
+for (annot  in annot2Plot)
+    proj2d(
+        trimap,
+        colorBy = sampleAnnot[annot],
+        colorScale = colorScales[[annot]]
+    )
+dev.off()
+
+knitr::include_graphics(c("outPlots/TRIMAP.pdf"))
+```
+
+#### Gene clustering (genemodule detection)
+
+Do not hesitate to tune the `resolution_parameter` to get a number of clusters that makes sense for your data.
+
+**Generated files**
+
+ 📂**outPlots** Output figures. \
+ ┣ 📜**moduleActivationScore.pdf** Heatmap from activation score of each unsupervised gene cluster (gene module) in each sample.\
+ ┗ 📜**markersOfUnsupervisedClusters.pdf** Heatmap of best markers of unsupervised sample clusters. The number of markers represented in each cluster is controlled by the parameter *topGeneShown*.\
+ 📂**outText** Output data in text formats.\
+ ┣ 📜**markerPerLeidenCluster.tsv** Area Under ROC curve (AUROC), LogFC and marker score for each gene for each unsupervised Leiden cluster. AUC: A value of 0.5 means that the gene is not a marker, 1 that the gene is a perfect marker, and 0 a perfect negative marker (if it is expressed , we are sure to not be in the sample cluster). See `getMarkers` for more details.\
+ ┣ 📜**moduleActivationScore.tsv** Activation score for each sample for each gene module.\
+ ┣ 📜**moduleMembership.tsv** Membership for each gene for each module. It is computed by $cor(expressionOfGene,moduleActivationScore)$.\
+ ┣ 📜**geneAnnotations.tsv** Statistics on each gene, updated with the following columns:
+ 
+- *Module*: unsupervised gene cluster (gene module) attribution. M0 is the default module (genes that are not attributed to a real gene module).
+- *Membership*: Membership score of the gene to its gene module. Not applicable if the gene come from M0.
+
+ ┗ 📜**sampleAnnot.tsv** Sample annotations (data for each sample that are not gene expression), updated with Leiden clustering.
+
+```{r GeneModuleDetection, eval=analysesForLargeDatset}
+geneCluster<-UMAP(logCounts, transpose=FALSE,ret_nn = TRUE,metric="cosine") |> leidenFromUMAP(resolution_parameter = 2)
+geneCluster<-str_replace_all(geneCluster,"k","M");names(geneCluster)<-rn(logCounts)
+
+nGenePerModule<-table(geneCluster)
+okSizeModule <- names(nGenePerModule)[nGenePerModule>=10]
+
+genePerModule<-sapply(okSizeModule,function(m) names(geneCluster)[geneCluster==m])
+
+#Computing of the activation score of each module. Activation score = linear sum of expression of the genes in the module
+moduleActivationScoreDt<-GSDS::activeScorePCAlist(exprMatrix = logCounts, geneList = genePerModule[okSizeModule])
+moduleActivationScore<-moduleActivationScoreDt$activScoreMat
+
+geneAnnot$Module<-"M0";geneAnnot[names(geneCluster),"Module"]<-geneCluster
+geneAnnot[!geneAnnot$Module %in% okSizeModule,"Module"]<-"M0"
+geneAnnot$Module<-as.factor(geneAnnot$Module)
+
+moduleMembership <- suppressWarnings(cor(t(logCounts), moduleActivationScore)); 
+colnames(moduleMembership) <- colnames(moduleActivationScore)
+
+geneAnnot$Membership<-NA #Membership = does the gene has the same behavior (expression) than the module (activation score)?
+geneAnnot$Contribution<-NA #Contribution of the gene to the activation score
+for(gene in rn(geneAnnot)[geneAnnot$Module!="M0"]) {
+    module <- as.character(geneAnnot[gene,"Module"])
+	geneAnnot[gene,"Membership"]<-moduleMembership[gene,module]
+	geneAnnot[gene,"Contribution"]<-moduleActivationScoreDt$contributionList[[module]][gene]
+}
+rm(moduleActivationScoreDt)
+
+pdf("outPlots/moduleActivationScore.pdf",width = 10,height = 10)
+heatmap.DM(
+    t(moduleActivationScore),
+    scale = F,
+    preSet = NULL,
+    midColorIs0 = TRUE,
+    colData = sampleAnnot[annot2Plot],
+    colorAnnot = colorScales[annot2Plot],
+    name = "gene\nmodule\nactivation",
+    column_split = sampleAnnot$sampleClusters
+)
+dev.off()
+
+markerPerCluster<-getMarkers(logCounts,sampleAnnot$sampleClusters,BPPARAM=BPPARAM)
+
+bestMarkersPerCluster <-
+    VectorListToFactor(lapply(data.frame(
+        extractFeatureMarkerData(markerPerCluster)
+    ), function(markerScore) {
+        rn(markerPerCluster)[whichTop(markerScore, topGeneShown)]
+    }))
+
+pdf("outPlots/markersOfUnsupervisedClusters.pdf",width = 10,height = 10)
+heatmap.DM(
+    logCounts[names(bestMarkersPerCluster), ],
+    colData = sampleAnnot[annot2Plot],
+    colorAnnot = colorScales[annot2Plot],
+    column_split = sampleAnnot$sampleClusters,
+    row_split = bestMarkersPerCluster,
+    clustering_distance_columns = "pearson"
+)
+dev.off()
+
+fastWrite(markerPerCluster,"outText/markerPerLeidenCluster.tsv")
+fastWrite(moduleActivationScore,"outText/moduleActivationScore.tsv")
+fastWrite(moduleMembership,"outText/moduleMembership.tsv")
+fastWrite(geneAnnot,"outText/geneAnnotations.tsv")
+fastWrite(sampleAnnot,"outText/sampleAnnotations.tsv")
+
+knitr::include_graphics(c("outPlots/moduleActivationScore.pdf", "outPlots/markersOfUnsupervisedClusters.pdf"))
+```
+
+#### Super Heatmap
+
+**Generated files**
+ 
+ 📂**outPlots** Output figures. \
+ ┗ 📜**superHeatmap.pdf** Heatmap of the whole transcriptome, spitted by gene modules and unsupervised sample clusters. Height of each row slice is log proportional to the number of genes in the gene module.
+
+```{r superHeatmap, eval=analysesForLargeDatset}
+
+htList<-list()
+
+firstModule <- levels(geneAnnot$Module)[1]
+otherModules <- levels(geneAnnot$Module)[-1]
+
+genes<-rn(geneAnnot)[geneAnnot$Module==firstModule]
+ht<-heatmap.DM(logCounts[genes,],showGrid = F,
+	 use_raster = TRUE,raster_quality = 5,returnHeatmap = TRUE,
+	 column_split = sampleAnnot$sampleClusters,
+	 height = unit(log2(len(genes))/5, "cm"),
+	 cluster_row_slices = FALSE,colData = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],
+	 row_title_gp=gpar(fontsize=9),column_title_gp=gpar(fontsize=9),
+	 cluster_column_slices = FALSE,border = TRUE,name="expression",row_title_rot = 0,
+	 show_row_names = F,show_column_names = F,row_title = paste0("M0\n",length(genes)," genes"))
+
+for(mod in otherModules){
+	genes<-rn(geneAnnot)[geneAnnot$Module==mod]
+	htList[[mod]] <- heatmap.DM(
+	    logCounts[genes, ],
+	    showGrid = F,
+	    use_raster = TRUE,
+	    raster_quality = 5,
+	    returnHeatmap = TRUE,
+	    column_split = sampleAnnot$sampleClusters,
+	    height = unit(log2(len(genes)) / 5, "cm"),
+	    cluster_row_slices = FALSE,
+	    row_title_gp = gpar(fontsize = 9),
+	    column_title_gp = gpar(fontsize = 9),
+	    cluster_column_slices = FALSE,
+	    border = TRUE,
+	    name = "expression",
+	    row_title_rot = 0,
+	    show_row_names = F,
+	    show_column_names = F,
+	    row_title = paste0(mod, "\n", length(genes), " genes")
+	)
+}
+
+
+for(i in 1:length(htList)){
+	suppressWarnings(ht<- ht %v% htList[[i]])
+}
+
+pdf("outPlots/superHeatmap.pdf",height = nlevels(geneAnnot$Module)+1.5,width = 10)
+draw(ht,clustering_distance_columns = covDist,clustering_method_columns="ward.D2")
+dev.off()
+
+rm(htList,ht)
+
+knitr::include_graphics(c("outPlots/superHeatmap.pdf"))
+```
+
+
+```{r checkPoint2}
+gc()
+save.image("outRobj/checkPoint2.RData")
+```
+
+## Differential expression (DE) analysis
+
+### Computing of DE genes
+
+**Generated files**
+
+ 📂**resPerComparison** Outputs that are specific to each comparison.\
+ ┣ 📂 **\[comparison name]**\
+ ┃ ┣ 📜**DESeqResults.tsv** Results from DESeq2 with the following columns:
+ 
+- *baseMean*: Average expression of the gene.
+- *log2FoldChange*: Ratio of expression between sample groups (followed by a log2): $log2(downLevel/upLevel)$. *downLevel* refers to samples that belongs to the group where if a gene is more expressed, the gene is considered as downregulated. *upLevel* the group where a gene is more expressed is considered as upregulated. Example: between a Wild-type (*downLevel*) and a KO (*upLevel*) group of samples, when $log2FoldChange=0$ the gene have the same expression in both group. When $log2FoldChange=1$ the gene is two times more expressed in KO than in WT group, and when $log2FoldChange=-1$ the gene is two time more expressed in WT.
+- *lfcSE*: Dispersion of *log2FoldChange* (log2FoldChange standard error).
+- *stat*: Statistic of test, this value is compared to the null distribution to retrieve the p-value.
+- *pvalue**: Probability to observe this $|log2FoldChange|$ or greater if the gene would be uniformly expressed between the two groups (samples are from the same population). Do not use this value directly into your paper,but the *padj* instead.  
+- *padj*: Adjusted p-value. If the samples are from the same population ($H0$ is true for every gene), with a significativity threshold at 0.05, then 5% of the give would be significant and hence correspond to false positives. The adjusted p-value take account of the number of false positive that are growing in the same time than number of test and minimize the risk to have at least one false positive.
+- *isDE*: DOWNREG: gene is significant and more expressed in *downLevel* group, UPREG: gene is significant and more expressed in *upLevel* group, NONE: gene is not differentially expressed.
+
+ ┃ ┣ 📜**pvalHistogram.pdf** Distribution of p-values from DESEq2.\
+ ┃ ┣ 📜**volcanoPlot.pdf** Adjusted p-values from DESeq2 in function of Log2FC with additional information on the comparison. Significance threshold are represented.\
+ ┃ ┣ 📜**MA-plot.pdf** Log2FC in function of average expression. Legend is the same than in the volcano plot. \
+ ┃ ┗ 📜**focusOnTop10genes.pdf** Expression of the top ten genes, with a special y scale $log10(x+1)$\
+ 📂**outText** Output data in text formats.\
+ ┗ 📜**DESeq_globalResults.tsv** Contains all DESeq results from all comparisons. The features are limited to *baseMean*,*log2FoldChange*,*padj* and *isDE*.
+
+```{r DEcompute}
+DEresults<-foreach(comp=colnames(compMatrix)) %dopar%{ #change 'dopar' by 'do' to run in single thread mode
+	library(DESeq2)
+    library(ggrepel)
+    library(oob)
+	condColumn<-compMatrix[1,comp]
+	upLevel<-compMatrix["upLevel",comp]
+	downLevel<-compMatrix["downLevel",comp]
+	
+	DEresult <-
+	    data.frame(results(
+	        dds,
+	        contrast = c(condColumn, upLevel, downLevel),
+	        independentFiltering = TRUE,
+	        alpha = padjThreshold
+	    ))
+	DEresult<-cbind(data.frame(gene=rownames(DEresult),stringsAsFactors = FALSE),DEresult)
+	DEresult$isDE<-"NONE"
+	DEresult[!is.na(DEresult$padj) & DEresult$padj<padjThreshold & DEresult$log2FoldChange > LFCthreshold,"isDE"]<-"UPREG"
+	DEresult[!is.na(DEresult$padj) & DEresult$padj<padjThreshold & DEresult$log2FoldChange < -LFCthreshold,"isDE"]<-"DOWNREG"
+	DEresult$isDE<-as.factor(DEresult$isDE)
+	fastWrite(DEresult,paste0("resPerComparison/",comp,"/DESeqResults.tsv"),row.names = FALSE)
+	
+	### P val histogram ###
+	
+	pdf(paste0("resPerComparison/",comp,"/pvalHistogram.pdf"),width = 10,height = 8)
+	print(
+	    ggplot(data.frame(DEresult), mapping = aes(pvalue)) +
+	        geom_histogram(
+	            binwidth = 0.05,
+	            boundary = TRUE,
+	            boundary = TRUE
+	        ) +
+	        geom_hline(yintercept = median(table(
+	            cut(
+	                DEresult$pvalue,
+	                breaks = seq(0, 1, 0.05),
+	                include.lowest = FALSE
+	            )
+	        ))) +
+	        ggtitle(paste0("P-value histogram for comparison ",condColumn,": ",downLevel," vs ",upLevel))
+	)
+	dev.off()
+	
+	### Volcano plots ###
+	pdf(paste0("resPerComparison/",comp,"/volcanoPlot.pdf"),width = 9,height = 8)
+	volcanoPlot.DESeq2(
+	    DEresult = DEresult,
+	    formula = formulaChar,
+	    condColumn = condColumn,
+	    downLevel = downLevel,
+	    upLevel = upLevel,
+	    padjThreshold = padjThreshold,
+	    LFCthreshold = LFCthreshold,
+	    topGene = topGeneShown
+	)
+	dev.off()
+		
+	### MA plot ###
+	gene2Plot<-order(DEresult$padj)
+	gene2Plot<-gene2Plot[!is.na(DEresult[gene2Plot,"isDE"])][1:topGeneShown]
+	
+	pdf(paste0("resPerComparison/",comp,"/MA-plot.pdf"),width = 10,height = 8)
+	print(ggplot(data=DEresult,mapping = aes(x=baseMean,y=log2FoldChange,colour=isDE))+
+		geom_point(size=1)+
+		scale_x_log10()+
+		scale_color_manual(values = c("#3AAA35","grey75","#E40429"),guide=FALSE)+
+		theme(
+			panel.background = element_rect(fill = NA,colour="black"),
+			panel.grid.major = element_line(colour = NA),
+			panel.grid.minor = element_line(colour = NA)
+		)+
+		geom_text_repel(data = DEresult[gene2Plot,],mapping = aes(x=baseMean,y=log2FoldChange,label=gene),
+										size=3,inherit.aes = FALSE,fontface="bold.italic")+
+		ggtitle(paste0("MA-plot for comparison ",condColumn,": ",downLevel," vs ",upLevel))+
+		xlab("Mean expression")+ylab("log2(Fold-Change)"))
+	dev.off()
+	
+	pdf(paste0("resPerComparison/",comp,"/focusOnTop10genes.pdf"),width = 12,height = 8)
+	plotExpr(normCounts[gene2Plot[1:10],],sampleAnnot[condColumn],colorScale = colorScales[[condColumn]])
+	dev.off()
+	
+	return(DEresult)
+};names(DEresults)<-colnames(compMatrix)
+
+DEgenesPerComparison<-lapply(DEresults,function(DEresult){ DEresult$gene[DEresult$isDE!="NONE"] })
+
+DEres<-do.call("cbind",lapply(names(DEresults),function(comp){
+  res<-DEresults[[comp]][,c('baseMean','log2FoldChange','padj','isDE')]
+  colnames(res)<-paste0(colnames(res),"_",comp)
+  res
+}))
+DEres<-DEres[,colnames(DEres) |> sort()]
+rownames(DEres)<-DEresults[[1]]$gene
+
+fastWrite(DEres,"outText/DESeq_globalResults.tsv")
+
+
+plot_paths = getPlotPathPerComp(
+    c(
+        "pvalHistogram.pdf",
+        "volcanoPlot.pdf",
+        "MA-plot.pdf",
+        "focusOnTop10genes.pdf"
+    ),
+    colnames(compMatrix)
+)
+knitr::include_graphics(plot_paths)
+```
+
+### DE genes heatmaps
+
+**Generated files**
+
+ 📂**resPerComparison** Outputs that are specific to each comparison.\
+ ┣ 📂 **\[comparison name]**\
+ ┃ ┣ 📜**heatmapDEgenes.pdf**  Heatmap of differentially expressed genes. Samples from the comparison are separated from the rest.
+ 
+```{r DEheatmaps}
+
+#Select comparisons with number of DE > 0
+significantComparisons<-c(); for(comp in comparisonToDo) if(sum(DEresults[[comp]]$isDE!="NONE")>1) significantComparisons<-c(significantComparisons,comp)
+
+for (comp in significantComparisons){
+	DEgenes<-DEgenesPerComparison[[comp]]
+	pdf(paste0("resPerComparison/",comp,"/heatmapDEgenes.pdf"),width = 10,height = 10)
+	heatmap.DM(logCounts[DEgenes,],
+							column_split= ifelse(sampleAnnot[,compMatrix[1,comp]] %in% c(compMatrix[2,comp],compMatrix[3,comp]),comp,"other samples"),
+						 colData = sampleAnnot[annot2Plot],colorAnnot = colorScales[annot2Plot],row_split=DEresults[[comp]][DEgenes,"isDE"])
+	dev.off()
+}
+plot_paths = getPlotPathPerComp(c("heatmapDEgenes.pdf"),colnames(compMatrix))
+knitr::include_graphics(plot_paths)
+```
+
+### Rich UpSet plot
+
+*Generated files*
+
+ 📂**outPlots** Output figures.\
+ ┗ 📜**upsetPlot.pdf** \
+Summary of differential expression analyses. Each column can be seen as a Venn diagram, each row represent a comparison.
+In addition to Upset plot, *richUpset* computes and represents additional values useful for understanding the relationship between sets. The main ones are a p-value for each overlap, and the effect size of the association as the OEdev: $(observed - expected) / sqrt(universeSize)$
+
+
+```{r upsetPlot}
+pdf("outPlots/richUpsetPlot.pdf",width = 10,height = 6)
+richUpset(DEgenesPerComparison,universe = rownames(logCounts))
+dev.off()
+
+knitr::include_graphics("outPlots/richUpsetPlot.pdf")
+```
+
+```{r checkPoint3}
+gc()
+save.image("outRobj/checkPoint3.RData")
+```
+
+
+## Functional enrichment
+
+### Download gene set databases
+
+Alternate gene set / pathway database can be used.
+
+```{r getDBterms}
+# geneSetsDatabase=list(msigdb=fORA::gmtPathways("inputs/msigdb.v7.2.symbols.gmt")) #alternative for human
+geneSetsDatabase<-getDBterms(rn(logCounts),speciesData = species.data,returnGenesSymbol = TRUE,database=c("kegg","goBP"))
+```
+
+### Over Representation Analysis (ORA) of DE genes
+
+**Generated files**
+
+ 📂**resPerComparison** Outputs that are specific to each comparison.\
+ ┣ 📂 **\[comparison name]**\
+ ┃ ┣ 📜**ORA_Volcano.pdf**\
+ Volcano plot of ORA where each dot is a gene set. Page 1 is for UP regulated genes, page 2 for DOWN.\
+ ┃ ┗ 📜**ORA_enrichment.tsv** \
+ ORA results for the comparison with the following columns:
+ 
+ - *term* name of the Gene Set term
+ - *database* dataset origin of the term
+ - *nGene* number of genes in the term 
+ - *obsOverlapUP* number of gene in common between upregulated DE genes and term
+ - *obsOverlapDOWN* number of gene in common between downregulated DE genes and term
+ - *expectOverlapUP* expected number of gene in common between upregulated DE genes and term
+ - *expectOverlapDOWN* expected number of gene in common between downregulated DE genes and term
+ - *OEdeviationUP* normalized deviation from expected value for upregulated DE genes $\frac{obs-exp}{\sqrt{Universe}}$
+ - *OEdeviationDOWN* normalized deviation from expected value for downregulated DE genes
+ - *pvalUP* p-value based on a Hypergeometric test for upregulated DE genes
+ - *pvalDOWN* p-value based on a Hypergeometric test for downregulated DE genes
+ - *padjUP* p-value adjusted for multiple testing for upregulated DE genes
+ - *padjDOWN* p-value adjusted for multiple testing for downregulated DE genes
+ - *significantUP* are the upregulated DE genes significantly enriched in the term
+ - *significantDOWN* are the downregulated DE genes significantly enriched in the term
+ - *significant* at least one of the two is significant
+ - *genes* list of genes in the term
+ 
+ 📂**outText** Output data in text formats.\
+ ┗ 📜**ORA_enrichment.tsv** \
+ ORA results for all comparisons at once, limited to the columns *term*, *database* ,*nGene*, *OEdeviationUP*, *OEdeviationDOWN*, *padjUP*,  *padjDOWN*, *significant* and *genes*.
+ 
+```{r ORA}
+enrichResultsORAPerComp <- foreach(comp = significantComparisons) %dopar% {
+    library(oob) 
+    library(GSDS)
+    condColumn <- compMatrix[1, comp]
+    upLevel <- compMatrix["upLevel", comp]
+    downLevel <- compMatrix["downLevel", comp]
+    DEres <- DEresults[[comp]]
+    
+    isEnrich <- DEres$isDE == "UPREG"
+    names(isEnrich) <- rownames(DEres)
+    
+    enrichResultsORA_UP <-
+        enrich.ora(
+            isEnrich,
+            speciesData = species.data,
+            db_terms = geneSetsDatabase,
+            returnGenes = TRUE
+        )
+    
+    isEnrich <- DEres$isDE == "DOWNREG"
+    names(isEnrich) <- rownames(DEres)
+    
+    enrichResultsORA_DOWN <-
+        enrich.ora(
+            isEnrich,
+            speciesData = species.data,
+            db_terms = geneSetsDatabase,
+            returnGenes = FALSE
+        )
+    
+    enrichResultsORA <- data.frame(
+        term = enrichResultsORA_UP$term,
+        database = enrichResultsORA_UP$database,
+        nGene = enrichResultsORA_UP$nGene,
+        obsOverlapUP = enrichResultsORA_UP$obsOverlap,
+        obsOverlapDOWN = enrichResultsORA_DOWN$obsOverlap,
+        expectOverlapUP = enrichResultsORA_UP$expectOverlap,
+        expectOverlapDOWN = enrichResultsORA_DOWN$expectOverlap,
+        OEdeviationUP = enrichResultsORA_UP$OEdeviation,
+        OEdeviationDOWN = enrichResultsORA_DOWN$OEdeviation,
+        pvalUP = enrichResultsORA_UP$pval,
+        pvalDOWN = enrichResultsORA_DOWN$pval,
+        padjUP = p.adjust(enrichResultsORA_UP$pval, method = "BH"),
+        padjDOWN = p.adjust(enrichResultsORA_DOWN$pval, method = "BH"),
+        significantUP = enrichResultsORA_UP$padj < enrichThreshold,
+        significantDOWN = enrichResultsORA_DOWN$padj < enrichThreshold
+    )
+    enrichResultsORA$significant <- enrichResultsORA$significantUP | enrichResultsORA$significantDOWN
+    enrichResultsORA$genes<-enrichResultsORA_UP$genes
+    
+    exportEnrich(enrichResultsORA,paste0("resPerComparison/", comp, "/ORA_enrichment.tsv"))
+    
+    pdf(paste0("resPerComparison/", comp, "/ORA_volcano.pdf"),width = 11 ,height = 10)
+    print(
+        volcanoPlot(
+            enrichResultsORA,
+            effectSizeCol = "OEdeviationUP",
+            adjPvalCol = "padjUP",
+            labelCol = "term",
+            padjThres = enrichThreshold,
+            topShownPerSide = 15,
+            returnGraph = TRUE
+        ) + xlab(paste0("Effect size (OE deviation) of genes associated with ", upLevel)) + ylab("-log10(Adjusted p-value)")+
+            ggtitle(paste0("Volcano plot of ORA for ", condColumn, ": ", upLevel, " vs ",downLevel))
+    )
+    print(
+        volcanoPlot(
+            enrichResultsORA,
+            effectSizeCol = "OEdeviationDOWN",
+            adjPvalCol = "padjDOWN",
+            labelCol = "term",
+            padjThres = enrichThreshold,
+            topShownPerSide = 15,
+            returnGraph = TRUE
+        ) + xlab(paste0("Effect size (OE deviation) of genes associated with ", downLevel)) + ylab("-log10(Adjusted p-value)")+
+            ggtitle(paste0("Volcano plot of ORA for ", condColumn, ": ", upLevel, " vs ",downLevel))
+    )
+    dev.off()
+    
+    return(enrichResultsORA)
+};names(enrichResultsORAPerComp)<-significantComparisons
+
+enrichResultsORA<-do.call("cbind",lapply(significantComparisons,function(comp){
+    res <-enrichResultsORAPerComp[[comp]][, c('OEdeviationUP',
+                                            'OEdeviationDOWN',
+                                            'padjUP',
+                                            'padjDOWN',
+                                            'significant')]
+  colnames(res)<-paste0(colnames(res),"_",comp)
+  res
+}))
+enrichResultsORA<-enrichResultsORA[,colnames(enrichResultsORA) |> sort()]
+enrichResultsORA<-cbind(enrichResultsORAPerComp[[1]][,c("term","database","nGene")],
+                        enrichResultsORA)
+enrichResultsORA$genes <- enrichResultsORAPerComp[[1]]$genes
+exportEnrich(enrichResultsORA,"outText/ORA_enrichment.tsv")
+
+plot_paths = getPlotPathPerComp(c("ORA_volcano.pdf"),colnames(compMatrix))
+knitr::include_graphics(plot_paths)
+```
+### Additional plots for DE functionnal enrichment
+
+**Generated files**
+
+ 📂**resPerComparison** Outputs that are specific to each comparison.\
+ ┣ 📂 **\[comparison name]**\
+ ┃ ┣ 📜**ORA_heatmapPerPathway.pdf**\
+ Expression heatmaps of the top significant gene sets.\
+ ┃ ┣ 📂**pathview** For each top significant KEGG pathway, schematic of the pathway.\
+ ┃ ┃ ┣ 📜 **\[pathway name].pathview.png** Projection of Log2FC on the KEGG schematic.\
+ ┃ ┃ ┣ 📜 **\[pathway name].png** KEGG schematic without projection of Log2FC.\
+ ┗ ┗ ┗ 📜 **\[pathway name].xml** Information on mapping between genes and KEGG schematic.
+
+```{r ORA_additional}
+significantComparisonsEnrich <-
+    significantComparisons[sapply(enrichResultsORAPerComp, function(enrichResults)
+        sum(enrichResults$significant) > 0)]
+
+for(comp in significantComparisonsEnrich){
+    setwd(wd) #to be sure that previous pathview didn't mess up with the working directory
+    enrichResultsORA <- enrichResultsORAPerComp[[comp]]
+
+    pathwayToPlot <- enrichResultsORA[enrichResultsORA$significant, ]
+    minPval <- apply(cbind(pathwayToPlot$pvalUP, pathwayToPlot$pvalDOWN),1,min)
+    pathwayToPlot <- pathwayToPlot[order(minPval), ]
+    pathwayToPlot <-pathwayToPlot[1:min(nrow(pathwayToPlot), pathwayInFig), ]
+    
+    pdf(
+        paste0("resPerComparison/", comp, "/ORA_heatmapPerPathway.pdf"),
+        width = 10,
+        height = 15,
+        useDingbats = FALSE
+    )
+    for (i in 1:nrow(pathwayToPlot)) {
+        term <- pathwayToPlot[i, "pathway"]
+        genesOfPathway <- pathwayToPlot[i, ]$genes[[1]]
+        genesNotNA <-
+            genesOfPathway[genesOfPathway %in% rownames(logCounts)]
+        db <- pathwayToPlot[i, "database"]
+        if (!length(genesNotNA) > 2)
+            next
+        heatmap.DM(
+            logCounts[genesNotNA, ],
+            column_split = ifelse(
+                sampleAnnot[, compMatrix[1, comp]] %in% c(compMatrix[2, comp], compMatrix[3, comp]),
+                comp,
+                "other samples"
+            ),
+            colData = sampleAnnot[annot2Plot],
+            colorAnnot = colorScales[annot2Plot],
+            row_title = paste0(
+                term,
+                "\nFrom ",
+                db,
+                ", ",
+                length(genesNotNA),
+                "/",
+                length(genesOfPathway),
+                " genes detected"
+            )
+        )
+    }
+    dev.off()
+    
+    if ("kegg" %in% enrichResultsORA$database) {
+        dirOfPathview <- paste0("resPerComparison/", comp, "/pathview")
+        dir.create(dirOfPathview, showWarnings = FALSE)
+        keggPathway <-
+            unlist(enrichResultsORA[enrichResultsORA$database == "kegg" &
+                                        enrichResultsORA$significant, "pathway"])
+        logFC <- DEresults[[comp]]$log2FoldChange
+        names(logFC) <- DEresults[[comp]]$gene
+        setwd(dirOfPathview)
+        for (pathway in keggPathway)
+            viewKEGG(logFC, pathway, speciesData = species.data)
+        setwd(wd)
+    }
+    
+}
+setwd(wd)
+plot_paths = getPlotPathPerComp(c("ORA_heatmapPerPathway.pdf"),significantComparisonsEnrich)
+knitr::include_graphics(plot_paths)
+```
+
+### Gene Set Differential Scoring (GSDS)
+
+For different output, an "activation score" is mentioned. This score summarize the expression of a set of gene (a gene cluster, a pathway) in one sample. The methodology in this script is to make a Principal Component Analysis (PCA) with all samples but only with the genes of the gene set as features of the PCA. Then the first component is kept as the activation score of the gene set. Hence, the activation score is a linear combination of expression from the genes of the gene set. Some of the genes have a positive contribution (more there a expressed, more the activation score is positive), some could have a negative contribution (more the gene expressed, more the activation score is negative). Some gene are neutral and do not participate in the computing of activation score (contribution=0). The activation score is particularly suitable for gene sets that are pathway that contains negative regulation (antagonist ways within the pathway). When the activation score changes from negative to positive or vice-versa, the state of the pathway has switch from one biological state to another.
+
+The idea behind GSDS is to test for each gene set if the activation score is significantly different between the groups of samples. This feature is experimental is currently unpublished.
+
+
+**Generated files**
+
+ 📂**resPerComparison** Outputs that are specific to each comparison.\
+ ┣ 📂 **\[comparison name]**\
+ ┃ ┣ 📜**GSDS_pvalHistogram.pdf** Distribution of p-values from GSDS.\
+ ┃ ┣ 📜**GSDS_Volcano.pdf**  Volcano plot of GSDS results.\
+ ┃ ┣ 📜**GSDS_heatmap.pdf**\
+Heatmap of activation score for top significant gene sets. Genes on the left side of the vertical line are contributing negatively to the activation score, and positively on the right side.\
+ ┃ ┗📜**GSDS_enrichment.tsv** Gene Set Differential Activation results. Contains the following columns:
+ 
+ - *term*: name of the term/gene set
+ - *baseMean*: mean of activation score in the gene set
+ - *sd*: standard deviation  in the gene set
+ - *log2FoldChange*: Log(Log Fold Change) of activation score between the two tested groups.
+ - *pval*: an enrichment p-value
+ - *padj*: a BH-adjusted p-value
+ - *database*: origin of the gene set
+ - *size*: number of gene in the term after removing genes not present.
+ - *significant*: TRUE if the gene set is significant.
+
+ 📂**outText** Output data in text formats.\
+ ┣ 📜**geneSetsContributions_\[geneset_database].tsv**\
+ Contribution of gene of each gene set activation score.\
+ ┣ 📜**geneSetActivations_\[geneset_database].tsv**\
+ Activation scores for the given gene set databases.
+ ┗ 📜**GSDS_enrichment.tsv** \
+ GSDS results for all comparisons at once, limited to the columns *term*,*database*,*size*,*log2FoldChange*,*pval*,*padj*,*significant*.
+
+
+```{r GSDS}
+geneSetsActivScore<-GSDS::computeActivationScore(logCounts,db_terms = geneSetsDatabase)
+
+for(db in names(geneSetsActivScore)){
+	fastWrite(geneSetsActivScore[[db]]$activScoreMat,paste0("outText/geneSetActivations_",db,".tsv"))
+	write.vectorList(geneSetsActivScore[[db]]$contributionList,paste0("outText/geneSetsContributions_",db,".tsv"))
+}
+
+enrichResultsGSDSPerComp <- foreach(comp = significantComparisons) %dopar% {
+    library(oob)
+    library(ggrepel)
+    library(GSDS)
+	condColumn<-compMatrix[1,comp]
+	upLevel<-compMatrix["upLevel",comp]
+	downLevel<-compMatrix["downLevel",comp]
+
+	enrichResultsGSDS<-GSDS(geneSetActivScore = geneSetsActivScore,colData = sampleAnnot,contrast = compMatrix[,comp],
+													db_terms = geneSetsDatabase)
+	pdf(paste0("resPerComparison/",comp,"/GSDS_pvalHistogram.pdf"),width = 6 ,height = 5)
+	print(ggplot(enrichResultsGSDS,mapping=aes(pval))+
+		geom_histogram(binwidth = 0.05,boundary=TRUE)+
+		geom_hline(yintercept = median(table(cut(enrichResultsGSDS$pval,breaks = seq(0,1,0.05),include.lowest = FALSE))))
+	)
+	dev.off()
+	
+	enrichResultsGSDS$significant<-FALSE
+	enrichResultsGSDS[enrichResultsGSDS$padj<enrichThreshold,"significant"]<-TRUE
+	
+	fastWrite(enrichResultsGSDS,paste0("resPerComparison/",comp,"/GSDS_enrichment.tsv"),row.names = FALSE)
+	
+	pdf(paste0("resPerComparison/",comp,"/GSDS_Volcano.pdf"),width = 11 ,height = 10)
+	print(ggplot(enrichResultsGSDS,aes(x=log2FoldChange,y=-log10(padj),color=significant))+
+		geom_point()+theme_bw()+scale_color_manual(values=c("grey75","black"))+
+		geom_text_repel(data = enrichResultsGSDS[order(enrichResultsGSDS$pval)[1:15],],aes(x=log2FoldChange,y=-log10(padj),label=term),
+										inherit.aes = FALSE,color="grey50",max.overlaps = 15)
+	)
+	dev.off()
+	
+	if(sum(enrichResultsGSDS$significant)>1){
+		selectedTerms<-enrichResultsGSDS[enrichResultsGSDS$significant,]
+		selectedTerms<-selectedTerms[order(selectedTerms$pval),]
+		selectedTerms<-selectedTerms[1:min(nrow(selectedTerms),pathwayInFig),] #use top gene shown 
+		
+		selectedContrib<-apply(selectedTerms,1,function(term){
+			geneSetsActivScore[[ term["database"] ]]$contributionList[[ term["term"] ]]
+		});names(selectedContrib)<-selectedTerms$term
+		selectedActivations<-apply(selectedTerms,1,function(term){
+			geneSetsActivScore[[ term["database"] ]]$activScoreMat[,term["term"]]
+		}) |> t(); rownames(selectedActivations)<-selectedTerms$term
+		
+		pdf(
+		    paste0("resPerComparison/", comp, "/GSDS_heatmap.pdf"),
+		    width = 25,
+		    height = 12
+		)
+		heatmap.DM(
+		    selectedActivations,
+		    midColorIs0 = T,
+		    center = F,
+		    column_split = ifelse(
+		        sampleAnnot[, compMatrix[1, comp]] %in% c(compMatrix[2, comp], compMatrix[3, comp]),
+		        comp,
+		        "other samples"
+		    ),
+		    column_title_gp = gpar(fontsize = 8),
+		    name = "Activation score",
+		    preSet = NULL,
+		    right_annotation = rowAnnotation(
+		        "gene contribution" = GSDS.HeatmapAnnot(
+		            contributions = selectedContrib, width = unit(4, "inches"))
+		    ),
+		    row_names_side = "left",
+		    row_dend_side = "left",
+		    colData = sampleAnnot[annot2Plot],
+		    colorAnnot = colorScales[annot2Plot],
+		    row_names_max_width = unit(8, "inches"),
+		    autoFontSizeRow = FALSE,
+		    row_names_gp = gpar(fontsize = 1 / nrow(selectedActivations) * 400)
+		)
+		dev.off()
+	}
+	return(enrichResultsGSDS)
+};names(enrichResultsGSDSPerComp) <- significantComparisons
+
+enrichResultsGSDS<-do.call("cbind",lapply(significantComparisons,function(comp){
+    res <-enrichResultsGSDSPerComp[[comp]][, c('log2FoldChange',
+                                            'padj',
+                                            'significant')]
+  colnames(res)<-paste0(colnames(res),"_",comp)
+  res
+}))
+enrichResultsGSDS<-enrichResultsGSDS[,colnames(enrichResultsGSDS) |> sort()]
+enrichResultsGSDS<-cbind(enrichResultsGSDSPerComp[[1]][,c("term","database","size")],
+                        enrichResultsGSDS)
+fastWrite(enrichResultsGSDS,"outText/GSDS_enrichment.tsv",row.names = FALSE)
+
+significantComparisonsEnrich <-
+    significantComparisons[sapply(enrichResultsGSDSPerComp, function(enrichResults)
+        sum(enrichResults$significant) > 0)]
+
+plot_paths = c(
+    getPlotPathPerComp(
+        c("GSDS_pvalHistogram.pdf", "GSDS_volcano.pdf"),
+        colnames(compMatrix)
+    ),
+    getPlotPathPerComp(c("GSDS_heatmap.pdf"), significantComparisonsEnrich)
+)
+knitr::include_graphics(plot_paths)
+```
+
+### Gene Set Enrichment Analysis (GSEA) of Principal Components
+
+This section details the process of utilizing eigengenes for functional enrichment through Gene Set Enrichment Analysis (GSEA). For effective analysis, GSEA requires the input of all genes involved in the study, each associated with a specific "score of interest." In this context, the "score of interest" refers to the eigengenes associated with a principal component. If the scores of genes related to a specific term exhibit non-random patterns, it indicates significant enrichment for that term. While there are reservations about the reliability of GSEA results due to challenges in selecting an appropriate "score of interest," particularly in differential expression studies, the predefined scores in this analysis, derived from eigengenes, are deemed suitable for GSEA application.
+
+**Generated files**
+
+ 📂**outPlots** Output figures.\
+ ┗ 📜**volcanoEnrichPC.pdf** Volcano plots of GSEA results per principal component. One page per PC.\
+ 📂**outText** Output data in text formats.\
+ ┗ 📜**GSEA_enrichmentOfPCs.tsv** Enrichment results of GSEA for all principal components. Contains:
+ 
+ - *pathway* name of the pathway/term
+ - *database* name of the database the term belongs to
+ - *size* number of gene in the term after removing genes not present
+ - *padj* a BH-adjusted p-value
+ - *NES* enrichment score normalized to mean enrichment of random samples of the same size
+ 
+```{r GSEA_PCA}
+PCtoEnrich<-colnames(pca$rotation)[seq_len(visualizedComponents)]
+
+enrichResultsGSEAperPC<-foreach(PC = PCtoEnrich) %dopar% {
+    library(GSDS)
+    enrichResultsGSEA<-enrich.fcs(pca$rotation[,PC],speciesData = species.data,db_terms = geneSetsDatabase, nproc = 1)
+    return(enrichResultsGSEA)
+};names(enrichResultsGSEAperPC) <- PCtoEnrich
+
+pdf("outPlots/volcanoEnrichPC.pdf",width = 11 ,height = 10)
+for(PC in PCtoEnrich){
+    volcanoPlot(enrichResultsGSEAperPC[[PC]],effectSizeCol = "NES",adjPvalCol = "padj",padjThres = enrichThreshold,labelCol = "pathway")
+}
+dev.off()
+
+enrichResultsGSEA<-do.call("cbind",lapply(PCtoEnrich,function(PC){
+    res <-enrichResultsGSEAperPC[[PC]][, c('NES',
+                                            'padj')]
+  colnames(res)<-paste0(colnames(res),"_PC",PC)
+  res
+}))
+enrichResultsGSEA<-enrichResultsGSEA[,colnames(enrichResultsGSEA) |> sort()]
+enrichResultsGSEA<-cbind(enrichResultsGSEAperPC[[1]][,c("pathway","database","size")],
+                        enrichResultsGSEA)
+fastWrite(enrichResultsGSEA,"outText/GSEA_enrichmentOfPCs.tsv",row.names = FALSE)
+knitr::include_graphics("outPlots/volcanoEnrichPC.pdf")
+
+```
+### ORA functional enrichment of gene modules
+
+The analysis involves the identification of enriched terms within each gene module, providing insights into the biological functions associated with the genes in each module.
+
+ 📂**outText** Output data in text formats.\
+ ┣ 📂 **EnrichmentPerGeneModule**\ Enrichment results of ORA for each gene module.\
+ ┗ ┗ 📜**\[Module name].tsv** Enrichment results of ORA for the gene module. See ORA of DE genes for details on the content of the file.
+
+```{r FEgeneModules, eval=analysesForLargeDatset}
+dir.create("outText/EnrichmentPerGeneModule",showWarnings = FALSE)
+null<-foreach(module=levels(geneAnnot$Module)) %dopar%{
+    library(oob)
+    library(GSDS)
+	isInModule<-geneAnnot$Module==module;names(isInModule)<-rownames(geneAnnot)
+	exportEnrich(
+		enrich.ora(isInModule,speciesData = species.data,db_terms = geneSetsDatabase,returnGenes = TRUE),
+		paste0("outText/EnrichmentPerGeneModule/",module,".tsv")
+	)
+}
+
+```
+
+```{r checkPoint4}
+gc()
+save.image("outRobj/checkPoint4.RData")
+```
+
+## Generation of the web app
+
+To make the web app working you have two solution:
+- deploy the app on a http server
+- custom Firefox to open it without deploying a server, to do this: 
+You have to go to the URL bar of Firefox and type:
+`about:config`. Then you have to take the risk, then turn `security.fileuri.strict_origin_policy` to false by clicking on it.
+Voilà, you can open index.html with Firefox.
+
+A tutorial to use an interface very close to the web app is available [here](https://www.youtube.com/watch?v=C7lachmT7LA).
+
+**Generated files**
+
+ 📂**webApp** Directory that contains the web application.\
+ ┣ 📂**\[most of folders]** Code and data that are necessary to run the web app.\
+ ┣ 📂**prepare** \
+ Contains files that are necessary to build the web application, but are no longer required to run it.\
+ ┗ 📜**index.html** \
+ Main html page. This is the file to open with your browser to begin to use the web application.
+
+```{r webApp, eval=analysesForLargeDatset}
+source("scripts/buildWebApp.R")
+print(paste0("Web app available at ",wd,"/webApp/index.html"))
+
+```
