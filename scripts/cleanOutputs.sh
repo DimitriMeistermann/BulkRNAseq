@@ -10,3 +10,4 @@ rm -rf BulkRNAseq_cache
 rm -rf webApp/data
 rm webApp/index.html
 rm webApp/js/runUI.js
+rm BulkRNAseq.html
