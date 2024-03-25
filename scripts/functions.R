@@ -8,7 +8,7 @@ viewKEGG <-
              ...) {
         require(pathview)
         
-        blacklist <- c("hsa04215 Apoptosis - multiple species")
+        blacklist <- c("hsa04215 Apoptosis - multiple species","hsa01200 Carbon metabolism")
         if (pathway %in% blacklist) {
             warning(
                 pathway,

@@ -8,7 +8,7 @@ Bulk RNA-Seq pipeline v5
 	
 	**[optional]**: You can provide a "*comparison to do*" file and a "*color scales*" file. See the section *Inputs* in *BulkRNAseq.Rmd* for more details.
 
-3. Run install.R
+3. Run *install.R*
 4. Change all necessary parameters in the *Configuration of parameters* section in the script *BulkRNAseq.Rmd*.
 5. Run the notebook *BulkRNAseq.Rmd*.
 

@@ -265,6 +265,7 @@ if(!is.null(comparisonToDoFile)){
 }
 colnames(compMatrix)<-make.names(apply(compMatrix,2,function(x) paste(x["condColumn"],x["downLevel"],x["upLevel"],sep = "_")))
 comparisonToDo<-colnames(compMatrix)
+severalComp <- length(comparisonToDo) > 1
 for(comp in comparisonToDo) dir.create(paste0("resPerComparison/",comp),showWarnings=F)
 
 ### color scales generation ###
@@ -935,7 +936,7 @@ Summary of differential expression analyses. Each column can be seen as a Venn d
 In addition to Upset plot, *richUpset* computes and represents additional values useful for understanding the relationship between sets. The main ones are a p-value for each overlap, and the effect size of the association as the OEdev: $(observed - expected) / sqrt(universeSize)$
 
 
-```{r upsetPlot}
+```{r upsetPlot, eval=severalComp}
 pdf("outPlots/richUpsetPlot.pdf",width = 10,height = 6)
 richUpset(DEgenesPerComparison,universe = rownames(logCounts))
 dev.off()
@@ -1091,7 +1092,7 @@ enrichResultsORA<-cbind(enrichResultsORAPerComp[[1]][,c("term","database","nGene
 enrichResultsORA$genes <- enrichResultsORAPerComp[[1]]$genes
 exportEnrich(enrichResultsORA,"outText/ORA_enrichment.tsv")
 
-plot_paths = getPlotPathPerComp(c("ORA_volcano.pdf"),colnames(compMatrix))
+plot_paths = getPlotPathPerComp(c("ORA_volcano.pdf"),significantComparisons)
 knitr::include_graphics(plot_paths)
 ```
 ### Additional plots for DE functionnal enrichment
@@ -1128,7 +1129,7 @@ for(comp in significantComparisonsEnrich){
         useDingbats = FALSE
     )
     for (i in 1:nrow(pathwayToPlot)) {
-        term <- pathwayToPlot[i, "pathway"]
+        term <- pathwayToPlot[i, "term"]
         genesOfPathway <- pathwayToPlot[i, ]$genes[[1]]
         genesNotNA <-
             genesOfPathway[genesOfPathway %in% rownames(logCounts)]
@@ -1317,7 +1318,7 @@ significantComparisonsEnrich <-
 plot_paths = c(
     getPlotPathPerComp(
         c("GSDS_pvalHistogram.pdf", "GSDS_volcano.pdf"),
-        colnames(compMatrix)
+        significantComparisons
     ),
     getPlotPathPerComp(c("GSDS_heatmap.pdf"), significantComparisonsEnrich)
 )
@@ -1341,18 +1342,34 @@ This section details the process of utilizing eigengenes for functional enrichme
  - *padj* a BH-adjusted p-value
  - *NES* enrichment score normalized to mean enrichment of random samples of the same size
  
-```{r GSEA_PCA}
+```{r GSEA_PCA,echo=FALSE, fig.keep='all', message = FALSE}
 PCtoEnrich<-colnames(pca$rotation)[seq_len(visualizedComponents)]
 
 enrichResultsGSEAperPC<-foreach(PC = PCtoEnrich) %dopar% {
     library(GSDS)
-    enrichResultsGSEA<-enrich.fcs(pca$rotation[,PC],speciesData = species.data,db_terms = geneSetsDatabase, nproc = 1)
+    enrichResultsGSEA <-
+        enrich.fcs(
+            pca$rotation[, PC],
+            speciesData = species.data,
+            db_terms = geneSetsDatabase,
+            BPPARAM = BiocParallel::SerialParam()
+        )
     return(enrichResultsGSEA)
 };names(enrichResultsGSEAperPC) <- PCtoEnrich
 
 pdf("outPlots/volcanoEnrichPC.pdf",width = 11 ,height = 10)
 for(PC in PCtoEnrich){
-    volcanoPlot(enrichResultsGSEAperPC[[PC]],effectSizeCol = "NES",adjPvalCol = "padj",padjThres = enrichThreshold,labelCol = "pathway")
+    print(
+        volcanoPlot(
+            enrichResultsGSEAperPC[[PC]],
+            effectSizeCol = "NES",
+            adjPvalCol = "padj",
+            padjThres = enrichThreshold,
+            labelCol = "pathway",
+            returnGraph = TRUE
+        ) +
+            ggtitle(paste0("GSEA on PCA: ", PC))
+    )
 }
 dev.off()
 
@@ -1367,7 +1384,6 @@ enrichResultsGSEA<-cbind(enrichResultsGSEAperPC[[1]][,c("pathway","database","si
                         enrichResultsGSEA)
 fastWrite(enrichResultsGSEA,"outText/GSEA_enrichmentOfPCs.tsv",row.names = FALSE)
 knitr::include_graphics("outPlots/volcanoEnrichPC.pdf")
-
 ```
 ### ORA functional enrichment of gene modules
 
