@@ -68,12 +68,13 @@ Every other shape of the distribution should raise extreme caution: the model ca
 
 ## Step 2: Unsupervised and multivariate analyses
 - Computing of the overdispersion plot
-- Principal Component Analysis and Regression (and batch correction control if applicable).
 - Correlation heatmap
+- Principal Component Analysis and Regression (and batch correction control if applicable).
+- Link between experimental variable and PCs (PCANOVA)
 - 2D TRIMAP from over dispersed genes, sample clustering from an density based clustering on an alternative 10D UMAP.
-- gene module attribution by a hierarchical clustering of overdispersed genes from a distance of biweight midcorrelation (bicor).
+- gene module detection also from Leiden clustering
 - Computing modules activation scores and module memberships.
-- Computing AUROCS for each gene for each sample cluster.
+- Computing marker scores for each gene for each sample cluster.
 - Plotting the super heatmap.
 
 ## Step 3: Differential gene expression analyses
